@@ -89,20 +89,74 @@ PRINT '✓ custom_article (news) → Articles 遷移完成: ' + CAST(@ArticleNew
 -- ========================================
 PRINT '步驟 3: 遷移 ArticleContents 中文內容...';
 
--- 簡化處理：直接為每個Article創建內容（先用佔位內容）
+-- 遷移 custom_news 的中文內容（根據類型使用不同的內容來源）
+WITH NewsMapping AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as RowNum,
+        cn.sid,
+        cn.title,
+        cn.type,
+        CASE 
+            WHEN cn.type = 'release' THEN COALESCE(cret.release_tw_content, N'<p>暫無內容</p>')
+            ELSE COALESCE(cn.explanation, N'<p>' + cn.title + '</p>', N'<p>暫無內容</p>')
+        END as content
+    FROM EcoCampus_Maria3.dbo.custom_news cn
+    LEFT JOIN EcoCampus_Maria3.dbo.custom_release_en_tw cret ON cn.sid = cret.release_tw_sid
+    WHERE cn.lan = 'zh_tw'
+),
+ArticleMapping AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY ArticleId) as RowNum,
+        ArticleId
+    FROM Articles 
+    WHERE CreatedTime = @MigrationStartTime
+      AND ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+)
 INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
 SELECT 
-    ArticleId,
+    am.ArticleId,
     'zh-TW' as LocaleCode,
-    N'新聞標題' as Title,
-    N'新聞內容' as CmsHtml,
+    COALESCE(nm.title, N'無標題') as Title,
+    nm.content as CmsHtml,
     NULL as BannerFileId,
     @MigrationStartTime as CreatedTime,
     1 as CreatedUserId,
     @MigrationStartTime as UpdatedTime,
     1 as UpdatedUserId
-FROM Articles
-WHERE CreatedTime = @MigrationStartTime;
+FROM ArticleMapping am
+INNER JOIN NewsMapping nm ON am.RowNum = nm.RowNum;
+
+-- 遷移 custom_article (type='news') 的中文內容
+WITH ArticleNewsMapping AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY COALESCE(createdate, 0), sid) as RowNum,
+        sid,
+        title,
+        COALESCE(explanation, N'<p>' + title + '</p>', N'<p>暫無內容</p>') as content
+    FROM EcoCampus_Maria3.dbo.custom_article 
+    WHERE type = 'news' AND lan = 'zh_tw'
+),
+ArticleMapping2 AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY ArticleId) as RowNum,
+        ArticleId
+    FROM Articles 
+    WHERE CreatedTime = @MigrationStartTime
+      AND ArticleId > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+)
+INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
+SELECT 
+    am.ArticleId,
+    'zh-TW' as LocaleCode,
+    COALESCE(anm.title, N'無標題') as Title,
+    anm.content as CmsHtml,
+    NULL as BannerFileId,
+    @MigrationStartTime as CreatedTime,
+    1 as CreatedUserId,
+    @MigrationStartTime as UpdatedTime,
+    1 as UpdatedUserId
+FROM ArticleMapping2 am
+INNER JOIN ArticleNewsMapping anm ON am.RowNum = anm.RowNum;
 
 DECLARE @ContentsZhCount INT = @@ROWCOUNT;
 PRINT '✓ ArticleContents 中文版遷移完成: ' + CAST(@ContentsZhCount AS VARCHAR) + ' 筆記錄';
@@ -112,6 +166,45 @@ PRINT '✓ ArticleContents 中文版遷移完成: ' + CAST(@ContentsZhCount AS V
 -- ========================================
 PRINT '步驟 4: 遷移 ArticleContents 英文內容...';
 
+-- 遷移英文內容（主要針對校園投稿 type='release'）
+WITH NewsEnData AS (
+    SELECT 
+        cn.sid,
+        cn.title,
+        cn.type,
+        ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as SourceRowNum,
+        CASE 
+            WHEN cn.type = 'release' AND cret.release_en_content IS NOT NULL 
+            THEN cret.release_en_content
+            ELSE N'<p>' + cn.title + '</p>'  -- 如果沒有英文內容，使用標題作為內容
+        END as content
+    FROM EcoCampus_Maria3.dbo.custom_news cn
+    LEFT JOIN EcoCampus_Maria3.dbo.custom_release_en_tw cret ON cn.sid = cret.release_tw_sid
+    WHERE cn.lan = 'zh_tw'
+),
+ArticleEnMapping AS (
+    SELECT 
+        ArticleId,
+        ROW_NUMBER() OVER (ORDER BY ArticleId) as TargetRowNum
+    FROM Articles 
+    WHERE CreatedTime = @MigrationStartTime
+      AND ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+)
+INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
+SELECT 
+    aem.ArticleId,
+    'en' as LocaleCode,
+    ned.title as Title,
+    ned.content as CmsHtml,
+    NULL as BannerFileId,
+    @MigrationStartTime as CreatedTime,
+    1 as CreatedUserId,
+    @MigrationStartTime as UpdatedTime,
+    1 as UpdatedUserId
+FROM ArticleEnMapping aem
+INNER JOIN NewsEnData ned ON aem.TargetRowNum = ned.SourceRowNum;
+
+-- 為 custom_article (type='news') 創建英文內容（複製中文內容）
 INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
 SELECT 
     ArticleId,
@@ -125,14 +218,106 @@ SELECT
     1 as UpdatedUserId
 FROM ArticleContents 
 WHERE LocaleCode = 'zh-TW'
-  AND CreatedTime = @MigrationStartTime;
+  AND CreatedTime = @MigrationStartTime
+  AND ArticleId > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw');
 
 DECLARE @ContentsEnCount INT = @@ROWCOUNT;
 PRINT '✓ ArticleContents 英文版遷移完成: ' + CAST(@ContentsEnCount AS VARCHAR) + ' 筆記錄';
 
--- 暫時跳過附件遷移，確保基本功能正常
-PRINT '步驟 5: 跳過附件遷移（待後續完善）...';
-DECLARE @AttachmentsCount INT = 0;
+-- ========================================
+-- 5. 遷移附件資料 (ArticleAttachments)
+-- ========================================
+PRINT '步驟 5: 遷移附件資料...';
+
+-- 遷移附件：使用CTE建立正確的對應關係
+-- 首先為 custom_news 的附件創建對應關係
+WITH NewsIdMapping AS (
+    SELECT 
+        cn.sid as OriginalSid,
+        ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as SourceRowNum
+    FROM EcoCampus_Maria3.dbo.custom_news cn
+    WHERE cn.lan = 'zh_tw'
+),
+ArticleIdMapping AS (
+    SELECT 
+        ArticleId,
+        ROW_NUMBER() OVER (ORDER BY ArticleId) as TargetRowNum
+    FROM Articles 
+    WHERE CreatedTime = @MigrationStartTime
+      AND ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+),
+NewsToArticleMapping AS (
+    SELECT 
+        nim.OriginalSid,
+        aim.ArticleId
+    FROM NewsIdMapping nim
+    INNER JOIN ArticleIdMapping aim ON nim.SourceRowNum = aim.TargetRowNum
+)
+INSERT INTO ArticleAttachments (ArticleContentId, FileEntryId, ContentTypeCode, SortOrder)
+SELECT 
+    ac.ArticleContentId,
+    CASE 
+        WHEN cafl.type = 'file' AND cafl.fileinfo IS NOT NULL 
+        THEN fe.Id  -- 使用 FileEntry 映射
+        ELSE NULL
+    END as FileEntryId,
+    CASE cafl.type
+        WHEN 'file' THEN 'document'
+        WHEN 'link' THEN 'link'
+        ELSE 'document'
+    END as ContentTypeCode,
+    ROW_NUMBER() OVER (PARTITION BY ac.ArticleContentId ORDER BY cafl.sid) as SortOrder
+FROM EcoCampus_Maria3.dbo.custom_article_file_link cafl
+INNER JOIN NewsToArticleMapping mapping ON cafl.table_sid = mapping.OriginalSid
+INNER JOIN ArticleContents ac ON mapping.ArticleId = ac.ArticleId AND ac.LocaleCode = 'zh-TW'
+LEFT JOIN EcoCampus_PreProduction.dbo.FileEntry fe ON cafl.fileinfo = fe.FileName
+WHERE cafl.table_name = 'custom_news';
+
+-- 為 custom_article (type='news') 的附件創建對應關係
+WITH ArticleIdMapping AS (
+    SELECT 
+        ca.sid as OriginalSid,
+        ROW_NUMBER() OVER (ORDER BY COALESCE(ca.createdate, 0), ca.sid) as SourceRowNum
+    FROM EcoCampus_Maria3.dbo.custom_article ca
+    WHERE ca.type = 'news' AND ca.lan = 'zh_tw'
+),
+TargetArticleMapping AS (
+    SELECT 
+        ArticleId,
+        ROW_NUMBER() OVER (ORDER BY ArticleId) as TargetRowNum
+    FROM Articles 
+    WHERE CreatedTime = @MigrationStartTime
+      AND ArticleId > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+),
+ArticleToArticleMapping AS (
+    SELECT 
+        aim.OriginalSid,
+        tam.ArticleId
+    FROM ArticleIdMapping aim
+    INNER JOIN TargetArticleMapping tam ON aim.SourceRowNum = tam.TargetRowNum
+)
+INSERT INTO ArticleAttachments (ArticleContentId, FileEntryId, ContentTypeCode, SortOrder)
+SELECT 
+    ac.ArticleContentId,
+    CASE 
+        WHEN cafl.type = 'file' AND cafl.fileinfo IS NOT NULL 
+        THEN fe.Id  -- 使用 FileEntry 映射
+        ELSE NULL
+    END as FileEntryId,
+    CASE cafl.type
+        WHEN 'file' THEN 'document'
+        WHEN 'link' THEN 'link'
+        ELSE 'document'
+    END as ContentTypeCode,
+    ROW_NUMBER() OVER (PARTITION BY ac.ArticleContentId ORDER BY cafl.sid) as SortOrder
+FROM EcoCampus_Maria3.dbo.custom_article_file_link cafl
+INNER JOIN ArticleToArticleMapping mapping ON cafl.table_sid = mapping.OriginalSid
+INNER JOIN ArticleContents ac ON mapping.ArticleId = ac.ArticleId AND ac.LocaleCode = 'zh-TW'
+LEFT JOIN EcoCampus_PreProduction.dbo.FileEntry fe ON cafl.fileinfo = fe.FileName
+WHERE cafl.table_name = 'custom_article';
+
+DECLARE @AttachmentsCount INT = @@ROWCOUNT;
+PRINT '✓ ArticleAttachments 遷移完成: ' + CAST(@AttachmentsCount AS VARCHAR) + ' 筆記錄';
 
 -- ========================================
 -- 6. 遷移結果統計和驗證

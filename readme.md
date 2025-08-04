@@ -43,5 +43,16 @@
 6. **時間範圍設定** - 避免使用過短的時間範圍篩選，實際執行時間可能超出預期
 7. **資料對應驗證** - 使用PublishDate等關鍵欄位進行精確對應，而非依賴ROW_NUMBER()
 
+### FileEntry 映射規則 (Common Sense)
+- **新系統 Key**: FileEntry.Id (uniqueidentifier)
+- **舊系統 Key**: FileEntry.FileName (varchar)
+- **使用方式**: 根據舊系統的檔案名稱 (如 custom_article_file_link.fileinfo) 查詢 FileEntry 表取得新系統的 Id
+- **查詢範例**: 
+  ```sql
+  SELECT fe.Id 
+  FROM FileEntry fe 
+  WHERE fe.FileName = [舊系統檔案名稱]
+  ```
+
 ### 迭代完善流程
 - 發現問題 → 分析根因 → 修正腳本 → 清空資料 → 重新執行 → 驗證結果
