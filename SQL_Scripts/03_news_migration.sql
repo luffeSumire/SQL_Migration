@@ -31,11 +31,11 @@ SELECT
         ELSE '2015-01-01'
     END as PublishDate,
     CASE 
-        WHEN cn.type = 'certification' THEN 'certification'
-        WHEN cn.type = 'release' THEN 'campus_news' 
-        WHEN cn.type = 'activity' THEN 'activity'
-        WHEN cn.type = 'international' THEN 'international'
-        WHEN cn.type = 'other' THEN 'other'
+        WHEN cn.type = 'certification' THEN '1'
+        WHEN cn.type = 'release' THEN '2' 
+        WHEN cn.type = 'activity' THEN '3'
+        WHEN cn.type = 'international' THEN '4'
+        WHEN cn.type = 'other' THEN '5'
         ELSE 'other'
     END as TagCode,
     CASE WHEN cn.is_home = 1 THEN 1 ELSE 0 END as FeaturedStatus,
@@ -229,79 +229,114 @@ PRINT '✓ ArticleContents 英文版遷移完成: ' + CAST(@ContentsEnCount AS V
 -- ========================================
 PRINT '步驟 5: 遷移附件資料...';
 
--- 遷移附件：使用CTE建立正確的對應關係
--- 首先為 custom_news 的附件創建對應關係
-WITH NewsIdMapping AS (
+-- 遷移附件：使用更簡單的對應方式
+-- 先創建一個臨時表來建立 sid 到 ArticleId 的對應
+-- 為 custom_news 創建對應關係
+CREATE TABLE #NewsMapping (
+    OriginalSid INT,
+    ArticleId INT,
+    SourceRowNum INT,
+    TargetRowNum INT
+);
+
+-- 先插入來源資料的行號
+WITH SourceData AS (
     SELECT 
         cn.sid as OriginalSid,
         ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as SourceRowNum
     FROM EcoCampus_Maria3.dbo.custom_news cn
     WHERE cn.lan = 'zh_tw'
 ),
-ArticleIdMapping AS (
+TargetData AS (
     SELECT 
         ArticleId,
         ROW_NUMBER() OVER (ORDER BY ArticleId) as TargetRowNum
-    FROM Articles 
-    WHERE CreatedTime = @MigrationStartTime
-      AND ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
-),
-NewsToArticleMapping AS (
-    SELECT 
-        nim.OriginalSid,
-        aim.ArticleId
-    FROM NewsIdMapping nim
-    INNER JOIN ArticleIdMapping aim ON nim.SourceRowNum = aim.TargetRowNum
+    FROM (
+        SELECT ArticleId, ROW_NUMBER() OVER (ORDER BY ArticleId) as rn
+        FROM Articles 
+        WHERE CreatedTime = @MigrationStartTime
+    ) ranked_articles
+    WHERE rn <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
 )
-INSERT INTO ArticleAttachments (ArticleContentId, FileEntryId, ContentTypeCode, SortOrder)
+INSERT INTO #NewsMapping (OriginalSid, ArticleId, SourceRowNum, TargetRowNum)
+SELECT 
+    s.OriginalSid,
+    t.ArticleId,
+    s.SourceRowNum,
+    t.TargetRowNum
+FROM SourceData s
+INNER JOIN TargetData t ON s.SourceRowNum = t.TargetRowNum;
+
+-- 遷移 custom_news 附件
+INSERT INTO ArticleAttachments (ArticleContentId, FileEntryId, ContentTypeCode, SortOrder, LinkName, LinkUrl, CreatedTime, CreatedUserId)
 SELECT 
     ac.ArticleContentId,
     CASE 
         WHEN cafl.type = 'file' AND cafl.fileinfo IS NOT NULL 
-        THEN fe.Id  -- 使用 FileEntry 映射
+        THEN fe.Id
         ELSE NULL
     END as FileEntryId,
     CASE cafl.type
-        WHEN 'file' THEN 'document'
+        WHEN 'file' THEN 'file'
         WHEN 'link' THEN 'link'
         ELSE 'document'
     END as ContentTypeCode,
-    ROW_NUMBER() OVER (PARTITION BY ac.ArticleContentId ORDER BY cafl.sid) as SortOrder
+    ROW_NUMBER() OVER (PARTITION BY ac.ArticleContentId ORDER BY cafl.sid) as SortOrder,
+    CASE WHEN cafl.type = 'link' THEN cafl.title ELSE NULL END as LinkName,
+    CASE WHEN cafl.type = 'link' THEN cafl.link_url ELSE NULL END as LinkUrl,
+    @MigrationStartTime as CreatedTime,
+    1 as CreatedUserId
 FROM EcoCampus_Maria3.dbo.custom_article_file_link cafl
-INNER JOIN NewsToArticleMapping mapping ON cafl.table_sid = mapping.OriginalSid
-INNER JOIN ArticleContents ac ON mapping.ArticleId = ac.ArticleId AND ac.LocaleCode = 'zh-TW'
+INNER JOIN #NewsMapping nm ON cafl.table_sid = nm.OriginalSid
+INNER JOIN ArticleContents ac ON nm.ArticleId = ac.ArticleId AND ac.LocaleCode = 'zh-TW'
 LEFT JOIN EcoCampus_PreProduction.dbo.FileEntry fe ON cafl.fileinfo = fe.FileName
 WHERE cafl.table_name = 'custom_news';
 
--- 為 custom_article (type='news') 的附件創建對應關係
-WITH ArticleIdMapping AS (
+DROP TABLE #NewsMapping;
+
+-- 為 custom_article (type='news') 創建對應關係
+CREATE TABLE #ArticleMapping (
+    OriginalSid INT,
+    ArticleId INT,
+    SourceRowNum INT,
+    TargetRowNum INT
+);
+
+-- 先插入來源資料的行號
+WITH SourceData AS (
     SELECT 
         ca.sid as OriginalSid,
         ROW_NUMBER() OVER (ORDER BY COALESCE(ca.createdate, 0), ca.sid) as SourceRowNum
     FROM EcoCampus_Maria3.dbo.custom_article ca
     WHERE ca.type = 'news' AND ca.lan = 'zh_tw'
 ),
-TargetArticleMapping AS (
+TargetData AS (
     SELECT 
         ArticleId,
         ROW_NUMBER() OVER (ORDER BY ArticleId) as TargetRowNum
-    FROM Articles 
-    WHERE CreatedTime = @MigrationStartTime
-      AND ArticleId > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
-),
-ArticleToArticleMapping AS (
-    SELECT 
-        aim.OriginalSid,
-        tam.ArticleId
-    FROM ArticleIdMapping aim
-    INNER JOIN TargetArticleMapping tam ON aim.SourceRowNum = tam.TargetRowNum
+    FROM (
+        SELECT ArticleId, ROW_NUMBER() OVER (ORDER BY ArticleId) as rn
+        FROM Articles 
+        WHERE CreatedTime = @MigrationStartTime
+    ) ranked_articles
+    WHERE rn > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
 )
-INSERT INTO ArticleAttachments (ArticleContentId, FileEntryId, ContentTypeCode, SortOrder)
+INSERT INTO #ArticleMapping (OriginalSid, ArticleId, SourceRowNum, TargetRowNum)
+SELECT 
+    s.OriginalSid,
+    t.ArticleId,
+    s.SourceRowNum,
+    t.TargetRowNum
+FROM SourceData s
+INNER JOIN TargetData t ON s.SourceRowNum = t.TargetRowNum;
+
+-- 遷移 custom_article 附件
+INSERT INTO ArticleAttachments (ArticleContentId, FileEntryId, ContentTypeCode, SortOrder, LinkName, LinkUrl, CreatedTime, CreatedUserId)
 SELECT 
     ac.ArticleContentId,
     CASE 
         WHEN cafl.type = 'file' AND cafl.fileinfo IS NOT NULL 
-        THEN fe.Id  -- 使用 FileEntry 映射
+        THEN fe.Id
         ELSE NULL
     END as FileEntryId,
     CASE cafl.type
@@ -309,12 +344,18 @@ SELECT
         WHEN 'link' THEN 'link'
         ELSE 'document'
     END as ContentTypeCode,
-    ROW_NUMBER() OVER (PARTITION BY ac.ArticleContentId ORDER BY cafl.sid) as SortOrder
+    ROW_NUMBER() OVER (PARTITION BY ac.ArticleContentId ORDER BY cafl.sid) as SortOrder,
+    CASE WHEN cafl.type = 'link' THEN cafl.title ELSE NULL END as LinkName,
+    CASE WHEN cafl.type = 'link' THEN cafl.link_url ELSE NULL END as LinkUrl,
+    @MigrationStartTime as CreatedTime,
+    1 as CreatedUserId
 FROM EcoCampus_Maria3.dbo.custom_article_file_link cafl
-INNER JOIN ArticleToArticleMapping mapping ON cafl.table_sid = mapping.OriginalSid
-INNER JOIN ArticleContents ac ON mapping.ArticleId = ac.ArticleId AND ac.LocaleCode = 'zh-TW'
+INNER JOIN #ArticleMapping am ON cafl.table_sid = am.OriginalSid
+INNER JOIN ArticleContents ac ON am.ArticleId = ac.ArticleId AND ac.LocaleCode = 'zh-TW'
 LEFT JOIN EcoCampus_PreProduction.dbo.FileEntry fe ON cafl.fileinfo = fe.FileName
 WHERE cafl.table_name = 'custom_article';
+
+DROP TABLE #ArticleMapping;
 
 DECLARE @AttachmentsCount INT = @@ROWCOUNT;
 PRINT '✓ ArticleAttachments 遷移完成: ' + CAST(@AttachmentsCount AS VARCHAR) + ' 筆記錄';
