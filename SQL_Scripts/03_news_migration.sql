@@ -96,9 +96,10 @@ WITH NewsMapping AS (
         cn.sid,
         cn.title,
         cn.type,
+        cn.photo,
         CASE 
-            WHEN cn.type = 'release' THEN COALESCE(cret.release_tw_content, N'<p>暫無內容</p>')
-            ELSE COALESCE(cn.explanation, N'<p>' + cn.title + '</p>', N'<p>暫無內容</p>')
+            WHEN cn.type = 'release' THEN COALESCE(cret.release_tw_content, '')
+            ELSE COALESCE(cn.explanation, N'<p>' + cn.title + '</p>', '')
         END as content
     FROM EcoCampus_Maria3.dbo.custom_news cn
     LEFT JOIN EcoCampus_Maria3.dbo.custom_release_en_tw cret ON cn.sid = cret.release_tw_sid
@@ -106,11 +107,14 @@ WITH NewsMapping AS (
 ),
 ArticleMapping AS (
     SELECT 
-        ROW_NUMBER() OVER (ORDER BY ArticleId) as RowNum,
-        ArticleId
-    FROM Articles 
-    WHERE CreatedTime = @MigrationStartTime
-      AND ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+        ArticleId,
+        ROW_NUMBER() OVER (ORDER BY ArticleId) as RowNum
+    FROM (
+        SELECT ArticleId, ROW_NUMBER() OVER (ORDER BY ArticleId) as rn
+        FROM Articles 
+        WHERE CreatedTime = @MigrationStartTime
+    ) ranked_articles
+    WHERE rn <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
 )
 INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
 SELECT 
@@ -118,7 +122,11 @@ SELECT
     'zh-TW' as LocaleCode,
     COALESCE(nm.title, N'無標題') as Title,
     nm.content as CmsHtml,
-    NULL as BannerFileId,
+    CASE 
+        WHEN nm.photo IS NOT NULL AND nm.photo != '' 
+        THEN (SELECT fe.Id FROM EcoCampus_PreProduction.dbo.FileEntry fe WHERE fe.FileName = nm.photo)
+        ELSE NULL
+    END as BannerFileId,
     @MigrationStartTime as CreatedTime,
     1 as CreatedUserId,
     @MigrationStartTime as UpdatedTime,
@@ -138,11 +146,14 @@ WITH ArticleNewsMapping AS (
 ),
 ArticleMapping2 AS (
     SELECT 
-        ROW_NUMBER() OVER (ORDER BY ArticleId) as RowNum,
-        ArticleId
-    FROM Articles 
-    WHERE CreatedTime = @MigrationStartTime
-      AND ArticleId > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+        ArticleId,
+        ROW_NUMBER() OVER (ORDER BY ArticleId) as RowNum
+    FROM (
+        SELECT ArticleId, ROW_NUMBER() OVER (ORDER BY ArticleId) as rn
+        FROM Articles 
+        WHERE CreatedTime = @MigrationStartTime
+    ) ranked_articles
+    WHERE rn > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
 )
 INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
 SELECT 
@@ -166,7 +177,7 @@ PRINT '✓ ArticleContents 中文版遷移完成: ' + CAST(@ContentsZhCount AS V
 -- ========================================
 PRINT '步驟 4: 遷移 ArticleContents 英文內容...';
 
--- 遷移英文內容（主要針對校園投稿 type='release'）
+-- 遷移英文內容（優先使用英文內容，再使用中文遞補）
 WITH NewsEnData AS (
     SELECT 
         cn.sid,
@@ -174,9 +185,18 @@ WITH NewsEnData AS (
         cn.type,
         ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as SourceRowNum,
         CASE 
-            WHEN cn.type = 'release' AND cret.release_en_content IS NOT NULL 
-            THEN cret.release_en_content
-            ELSE N'<p>' + cn.title + '</p>'  -- 如果沒有英文內容，使用標題作為內容
+            WHEN cn.type = 'release' THEN 
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(cret.release_en_content)), ''),  -- 英文內容優先
+                    NULLIF(LTRIM(RTRIM(cret.release_tw_content)), ''),  -- 中文遞補
+                    ''  -- 留白
+                )
+            ELSE 
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(cn.explanation)), ''),  -- explanation 優先
+                    N'<p>' + cn.title + '</p>',  -- 標題遞補
+                    ''  -- 留白
+                )
         END as content
     FROM EcoCampus_Maria3.dbo.custom_news cn
     LEFT JOIN EcoCampus_Maria3.dbo.custom_release_en_tw cret ON cn.sid = cret.release_tw_sid
