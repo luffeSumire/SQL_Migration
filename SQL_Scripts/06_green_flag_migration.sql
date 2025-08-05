@@ -96,6 +96,51 @@ PRINT 'GreenFlagArticleContents insertion completed, total records: ' + CAST(@@R
 GO
 
 -- ========================================
+-- 2.1. Insert English Language Content (Same Content as Chinese)
+-- ========================================
+PRINT 'Step 2.1: Migrating GreenFlagArticleContents English content (duplicating Chinese content)...';
+
+INSERT INTO GreenFlagArticleContents (
+    GreenFlagArticleId,
+    LocaleCode,
+    Title,
+    SchoolName,
+    TextContent,
+    BannerFileId,
+    CreatedTime,
+    CreatedUserId
+)
+SELECT 
+    cfa.sid as GreenFlagArticleId,
+    'en' as LocaleCode,
+    cfa.title as Title,
+    cfa.school as SchoolName,
+    -- Simple concatenation of content fields
+    ISNULL(cfa.intro, '') + 
+    CASE WHEN cfa.feature IS NOT NULL AND cfa.feature != '' 
+         THEN CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10) + cfa.feature 
+         ELSE '' END +
+    CASE WHEN cfa.course IS NOT NULL AND cfa.course != '' 
+         THEN CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10) + cfa.course 
+         ELSE '' END +
+    CASE WHEN cfa.declaration IS NOT NULL AND cfa.declaration != '' 
+         THEN CHAR(13) + CHAR(10) + CHAR(13) + CHAR(10) + cfa.declaration
+         ELSE '' END as TextContent,
+    CASE 
+        WHEN cfa.image IS NOT NULL AND cfa.image != ''
+        THEN (SELECT TOP 1 fe.Id FROM FileEntry fe WHERE fe.FileName = cfa.image)
+        ELSE NULL 
+    END as BannerFileId,
+    SYSDATETIME() as CreatedTime,
+    1 as CreatedUserId
+FROM EcoCampus_Maria3.dbo.custom_flagarea cfa
+WHERE cfa.title IS NOT NULL AND cfa.title != ''
+ORDER BY cfa.sid;
+
+PRINT 'GreenFlagArticleContents English content insertion completed, total records: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
+GO
+
+-- ========================================
 -- 3. Insert GreenFlagArticleAttachments
 -- ========================================
 PRINT 'Step 3: Migrating GreenFlagArticleAttachments...';

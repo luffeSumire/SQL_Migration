@@ -128,6 +128,33 @@ PRINT 'SocialAgencyContents insertion completed, total records: ' + CAST(@@ROWCO
 GO
 
 -- ========================================
+-- 2.1. Insert English Language Content (Same Content as Chinese)
+-- ========================================
+PRINT 'Step 2.1: Migrating SocialAgencyContents English content (duplicating Chinese content)...';
+
+INSERT INTO SocialAgencyContents (
+    SocialAgencyId, 
+    LocaleCode, 
+    Title, 
+    Introduction, 
+    CreatedTime, 
+    CreatedUserId
+)
+SELECT 
+    csa.sid as SocialAgencyId,
+    'en' as LocaleCode,
+    csa.title as Title,
+    csa.description as Introduction,
+    SYSDATETIME() as CreatedTime,
+    1 as CreatedUserId
+FROM EcoCampus_Maria3.dbo.custom_social_agency csa
+WHERE csa.title IS NOT NULL AND csa.title != ''
+ORDER BY csa.sid;
+
+PRINT 'SocialAgencyContents English content insertion completed, total records: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
+GO
+
+-- ========================================
 -- 3. Insert SocialAgencyTagMappings Tag Associations (CORRECTED FOR MULTIPLE TAGS)
 -- ========================================
 PRINT 'Step 3: Migrating SocialAgencyTagMappings tag associations (handling multiple tags per agency)...';
