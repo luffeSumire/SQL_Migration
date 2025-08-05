@@ -99,14 +99,19 @@ SELECT
         THEN DATEADD(SECOND, ca.createdate, '1970-01-01')
         ELSE '2015-01-01'
     END as PublishDate,
-    'other' as TagCode,
+    CASE 
+        WHEN ca.tag_sid = 1 THEN '1'
+        WHEN ca.tag_sid = 7 THEN '2'
+        WHEN ca.tag_sid = 13 THEN '3'
+        ELSE 'other'
+    END as TagCode,
     CASE WHEN ca.is_home = 1 THEN 1 ELSE 0 END as FeaturedStatus,
     N'管理員' as Author,
     @MigrationStartTime as CreatedTime,
     1 as CreatedUserId,
     @MigrationStartTime as UpdatedTime,
     1 as UpdatedUserId,
-    CASE WHEN ca.is_show = 1 THEN 1 ELSE 0 END as Status,
+    2 as Status,
     COALESCE(ca.sequence, 0) as SortOrder
 FROM EcoCampus_Maria3.dbo.custom_article ca
 WHERE ca.type = 'news'
