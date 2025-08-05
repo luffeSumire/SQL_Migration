@@ -124,7 +124,13 @@ SELECT
     nm.content as CmsHtml,
     CASE 
         WHEN nm.photo IS NOT NULL AND nm.photo != '' 
-        THEN (SELECT fe.Id FROM EcoCampus_PreProduction.dbo.FileEntry fe WHERE fe.FileName = nm.photo)
+        THEN (
+            SELECT fe.Id 
+            FROM EcoCampus_PreProduction.dbo.FileEntry fe 
+            INNER JOIN EcoCampus_Maria3.dbo.sys_files_store ss 
+                ON fe.FileName = ss.name
+            WHERE nm.photo = CONCAT(ss.size, '__', ss.file_hash)
+        )
         ELSE NULL
     END as BannerFileId,
     @MigrationStartTime as CreatedTime,
