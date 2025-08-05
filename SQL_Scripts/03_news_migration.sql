@@ -372,6 +372,25 @@ INNER JOIN ArticleContents ac ON nm.ArticleId = ac.ArticleId AND ac.LocaleCode =
 LEFT JOIN EcoCampus_PreProduction.dbo.FileEntry fe ON cafl.fileinfo = fe.FileName
 WHERE cafl.table_name = 'custom_news';
 
+-- 為 custom_news 英文版複製附件記錄
+INSERT INTO ArticleAttachments (ArticleContentId, FileEntryId, ContentTypeCode, SortOrder, LinkName, LinkUrl, CreatedTime, CreatedUserId)
+SELECT 
+    ac_en.ArticleContentId,
+    aa.FileEntryId,
+    aa.ContentTypeCode,
+    aa.SortOrder,
+    aa.LinkName,
+    aa.LinkUrl,
+    @MigrationStartTime as CreatedTime,
+    1 as CreatedUserId
+FROM ArticleAttachments aa
+INNER JOIN ArticleContents ac_zh ON aa.ArticleContentId = ac_zh.ArticleContentId
+INNER JOIN ArticleContents ac_en ON ac_zh.ArticleId = ac_en.ArticleId 
+WHERE ac_zh.LocaleCode = 'zh-TW' 
+  AND ac_en.LocaleCode = 'en'
+  AND aa.CreatedTime = @MigrationStartTime
+  AND ac_zh.ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw');
+
 DROP TABLE #NewsMapping;
 
 -- 為 custom_article (type='news') 創建對應關係
@@ -434,6 +453,25 @@ INNER JOIN #ArticleMapping am ON cafl.table_sid = am.OriginalSid
 INNER JOIN ArticleContents ac ON am.ArticleId = ac.ArticleId AND ac.LocaleCode = 'zh-TW'
 LEFT JOIN EcoCampus_PreProduction.dbo.FileEntry fe ON cafl.fileinfo = fe.FileName
 WHERE cafl.table_name = 'custom_article';
+
+-- 為 custom_article 英文版複製附件記錄
+INSERT INTO ArticleAttachments (ArticleContentId, FileEntryId, ContentTypeCode, SortOrder, LinkName, LinkUrl, CreatedTime, CreatedUserId)
+SELECT 
+    ac_en.ArticleContentId,
+    aa.FileEntryId,
+    aa.ContentTypeCode,
+    aa.SortOrder,
+    aa.LinkName,
+    aa.LinkUrl,
+    @MigrationStartTime as CreatedTime,
+    1 as CreatedUserId
+FROM ArticleAttachments aa
+INNER JOIN ArticleContents ac_zh ON aa.ArticleContentId = ac_zh.ArticleContentId
+INNER JOIN ArticleContents ac_en ON ac_zh.ArticleId = ac_en.ArticleId 
+WHERE ac_zh.LocaleCode = 'zh-TW' 
+  AND ac_en.LocaleCode = 'en'
+  AND aa.CreatedTime = @MigrationStartTime
+  AND ac_zh.ArticleId > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw');
 
 DROP TABLE #ArticleMapping;
 
