@@ -24,6 +24,34 @@ PRINT '執行時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
 
 -- ========================================
+-- 0. 清空 FAQ 相關資料表
+-- ========================================
+PRINT '步驟 0: 清空 FAQ 相關資料表...';
+
+-- 停用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FaqContents')
+    ALTER TABLE FaqContents NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Faqs')
+    ALTER TABLE Faqs NOCHECK CONSTRAINT ALL;
+
+-- 清空資料 (從子表到主表的順序)
+DELETE FROM FaqContents;
+DELETE FROM Faqs;
+
+-- 重新啟用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FaqContents')
+    ALTER TABLE FaqContents WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Faqs')
+    ALTER TABLE Faqs WITH CHECK CHECK CONSTRAINT ALL;
+
+-- 重置自增欄位
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('Faqs'))
+    DBCC CHECKIDENT ('Faqs', RESEED, 0);
+
+PRINT '✓ FAQ 相關資料表已清空';
+GO
+
+-- ========================================
 -- 1. 插入 Faqs 主表資料
 -- ========================================
 PRINT '步驟 1: 遷移 Faqs 主表資料...';

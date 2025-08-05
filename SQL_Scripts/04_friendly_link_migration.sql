@@ -24,6 +24,34 @@ PRINT '執行時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
 
 -- ========================================
+-- 0. 清空 FriendlyLinks 相關資料表
+-- ========================================
+PRINT '步驟 0: 清空 FriendlyLinks 相關資料表...';
+
+-- 停用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FriendlyLinkTranslations')
+    ALTER TABLE FriendlyLinkTranslations NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FriendlyLinks')
+    ALTER TABLE FriendlyLinks NOCHECK CONSTRAINT ALL;
+
+-- 清空資料 (從子表到主表的順序)
+DELETE FROM FriendlyLinkTranslations;
+DELETE FROM FriendlyLinks;
+
+-- 重新啟用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FriendlyLinkTranslations')
+    ALTER TABLE FriendlyLinkTranslations WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FriendlyLinks')
+    ALTER TABLE FriendlyLinks WITH CHECK CHECK CONSTRAINT ALL;
+
+-- 重置自增欄位
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('FriendlyLinks'))
+    DBCC CHECKIDENT ('FriendlyLinks', RESEED, 0);
+
+PRINT '✓ FriendlyLinks 相關資料表已清空';
+GO
+
+-- ========================================
 -- 1. 插入 FriendlyLinks 主表資料
 -- ========================================
 PRINT '步驟 1: 遷移 FriendlyLinks 主表資料...';

@@ -7,17 +7,45 @@
 USE EcoCampus_PreProduction;
 GO
 
--- Clear existing video data
+PRINT '========================================';
+PRINT 'Video Migration Script Started';
+PRINT 'Execution Time: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
+PRINT '========================================';
+
+-- ========================================
+-- 0. 清空 Videos 相關資料表
+-- ========================================
+PRINT '步驟 0: 清空 Videos 相關資料表...';
+
+-- 停用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'VideoTranslations')
+    ALTER TABLE VideoTranslations NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Videos')
+    ALTER TABLE Videos NOCHECK CONSTRAINT ALL;
+
+-- 清空資料 (從子表到主表的順序)
 DELETE FROM VideoTranslations;
 DELETE FROM Videos;
+
+-- 重新啟用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'VideoTranslations')
+    ALTER TABLE VideoTranslations WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Videos')
+    ALTER TABLE Videos WITH CHECK CHECK CONSTRAINT ALL;
+
+-- 重置自增欄位
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('Videos'))
+    DBCC CHECKIDENT ('Videos', RESEED, 0);
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('VideoTranslations'))
+    DBCC CHECKIDENT ('VideoTranslations', RESEED, 0);
+
+PRINT '✓ Videos 相關資料表已清空';
 GO
 
--- Reseed identity columns
-DBCC CHECKIDENT('Videos', RESEED, 0);
-DBCC CHECKIDENT('VideoTranslations', RESEED, 0);
-GO
-
--- Insert Videos (main records)
+-- ========================================
+-- 1. Insert Videos (main records)
+-- ========================================
+PRINT '步驟 1: 遷移 Videos 主表資料...';
 INSERT INTO Videos (
     CreatedTime,
     CreatedUserId,

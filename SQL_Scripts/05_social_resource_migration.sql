@@ -25,6 +25,39 @@ PRINT 'Execution Time: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
 
 -- ========================================
+-- 0. 清空 SocialAgencies 相關資料表
+-- ========================================
+PRINT '步驟 0: 清空 SocialAgencies 相關資料表...';
+
+-- 停用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SocialAgencyTagMappings')
+    ALTER TABLE SocialAgencyTagMappings NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SocialAgencyContents')
+    ALTER TABLE SocialAgencyContents NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SocialAgencies')
+    ALTER TABLE SocialAgencies NOCHECK CONSTRAINT ALL;
+
+-- 清空資料 (從子表到主表的順序)
+DELETE FROM SocialAgencyTagMappings;
+DELETE FROM SocialAgencyContents;
+DELETE FROM SocialAgencies;
+
+-- 重新啟用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SocialAgencyTagMappings')
+    ALTER TABLE SocialAgencyTagMappings WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SocialAgencyContents')
+    ALTER TABLE SocialAgencyContents WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SocialAgencies')
+    ALTER TABLE SocialAgencies WITH CHECK CHECK CONSTRAINT ALL;
+
+-- 重置自增欄位
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('SocialAgencies'))
+    DBCC CHECKIDENT ('SocialAgencies', RESEED, 0);
+
+PRINT '✓ SocialAgencies 相關資料表已清空';
+GO
+
+-- ========================================
 -- 1. Insert SocialAgencies Main Table Data
 -- ========================================
 PRINT 'Step 1: Migrating SocialAgencies main table data...';

@@ -17,6 +17,38 @@ PRINT '執行時間: ' + CONVERT(VARCHAR, @MigrationStartTime, 120);
 PRINT '========================================';
 
 -- ========================================
+-- 0. 清空 Articles 相關資料表
+-- ========================================
+PRINT '步驟 0: 清空 Articles 相關資料表...';
+
+-- 停用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'ArticleAttachments')
+    ALTER TABLE ArticleAttachments NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'ArticleContents')
+    ALTER TABLE ArticleContents NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Articles')
+    ALTER TABLE Articles NOCHECK CONSTRAINT ALL;
+
+-- 清空資料 (從子表到主表的順序)
+DELETE FROM ArticleAttachments;
+DELETE FROM ArticleContents;
+DELETE FROM Articles;
+
+-- 重新啟用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'ArticleAttachments')
+    ALTER TABLE ArticleAttachments WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'ArticleContents')
+    ALTER TABLE ArticleContents WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Articles')
+    ALTER TABLE Articles WITH CHECK CHECK CONSTRAINT ALL;
+
+-- 重置自增欄位
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('Articles'))
+    DBCC CHECKIDENT ('Articles', RESEED, 0);
+
+PRINT '✓ Articles 相關資料表已清空';
+
+-- ========================================
 -- 1. 插入 Articles 主表資料 (來源: custom_news)
 -- ========================================
 PRINT '步驟 1: 遷移 custom_news 到 Articles 主表...';

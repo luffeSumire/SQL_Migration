@@ -14,6 +14,39 @@ PRINT 'Execution Time: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
 
 -- ========================================
+-- 0. 清空 GreenFlagArticles 相關資料表
+-- ========================================
+PRINT '步驟 0: 清空 GreenFlagArticles 相關資料表...';
+
+-- 停用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'GreenFlagArticleAttachments')
+    ALTER TABLE GreenFlagArticleAttachments NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'GreenFlagArticleContents')
+    ALTER TABLE GreenFlagArticleContents NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'GreenFlagArticles')
+    ALTER TABLE GreenFlagArticles NOCHECK CONSTRAINT ALL;
+
+-- 清空資料 (從子表到主表的順序)
+DELETE FROM GreenFlagArticleAttachments;
+DELETE FROM GreenFlagArticleContents;
+DELETE FROM GreenFlagArticles;
+
+-- 重新啟用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'GreenFlagArticleAttachments')
+    ALTER TABLE GreenFlagArticleAttachments WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'GreenFlagArticleContents')
+    ALTER TABLE GreenFlagArticleContents WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'GreenFlagArticles')
+    ALTER TABLE GreenFlagArticles WITH CHECK CHECK CONSTRAINT ALL;
+
+-- 重置自增欄位
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('GreenFlagArticles'))
+    DBCC CHECKIDENT ('GreenFlagArticles', RESEED, 0);
+
+PRINT '✓ GreenFlagArticles 相關資料表已清空';
+GO
+
+-- ========================================
 -- 1. Insert GreenFlagArticles Main Table Data
 -- ========================================
 PRINT 'Step 1: Migrating GreenFlagArticles main table data...';
