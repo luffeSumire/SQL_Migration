@@ -178,6 +178,7 @@ WITH ArticleNewsMapping AS (
         ROW_NUMBER() OVER (ORDER BY COALESCE(createdate, 0), sid) as RowNum,
         sid,
         title,
+        photo,
         COALESCE(explanation, N'<p>' + title + '</p>', N'<p>暫無內容</p>') as content
     FROM EcoCampus_Maria3.dbo.custom_article 
     WHERE type = 'news' AND lan = 'zh_tw'
@@ -199,7 +200,17 @@ SELECT
     'zh-TW' as LocaleCode,
     COALESCE(anm.title, N'無標題') as Title,
     anm.content as CmsHtml,
-    NULL as BannerFileId,
+    CASE 
+        WHEN anm.photo IS NOT NULL AND anm.photo != '' 
+        THEN (
+            SELECT fe.Id 
+            FROM EcoCampus_PreProduction.dbo.FileEntry fe 
+            INNER JOIN EcoCampus_Maria3.dbo.sys_files_store ss 
+                ON fe.FileName = ss.name
+            WHERE anm.photo = CONCAT(ss.size, '__', ss.file_hash)
+        )
+        ELSE NULL
+    END as BannerFileId,
     @MigrationStartTime as CreatedTime,
     1 as CreatedUserId,
     @MigrationStartTime as UpdatedTime,
@@ -221,6 +232,7 @@ WITH NewsEnData AS (
         cn.sid,
         cn.title,
         cn.type,
+        cn.photo,
         ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as SourceRowNum,
         CASE 
             WHEN cn.type = 'release' THEN 
@@ -254,7 +266,17 @@ SELECT
     'en' as LocaleCode,
     ned.title as Title,
     ned.content as CmsHtml,
-    NULL as BannerFileId,
+    CASE 
+        WHEN ned.photo IS NOT NULL AND ned.photo != '' 
+        THEN (
+            SELECT fe.Id 
+            FROM EcoCampus_PreProduction.dbo.FileEntry fe 
+            INNER JOIN EcoCampus_Maria3.dbo.sys_files_store ss 
+                ON fe.FileName = ss.name
+            WHERE ned.photo = CONCAT(ss.size, '__', ss.file_hash)
+        )
+        ELSE NULL
+    END as BannerFileId,
     @MigrationStartTime as CreatedTime,
     1 as CreatedUserId,
     @MigrationStartTime as UpdatedTime,
