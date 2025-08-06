@@ -70,26 +70,26 @@ SELECT
     -- 舊系統 '審核中' -> 新系統 0 (Pending)
     -- 舊系統 '尚未送審' -> 新系統 0 (Pending)
     CASE 
-        WHEN cret.review COLLATE Chinese_Traditional_Stroke_CI_AS LIKE N'%通過%' THEN 1  -- 審核通過
-        WHEN cret.review COLLATE Chinese_Traditional_Stroke_CI_AS LIKE N'%失敗%' THEN 2  -- 審核失敗
-        WHEN cret.review COLLATE Chinese_Traditional_Stroke_CI_AS LIKE N'%審核中%' THEN 0  -- 審核中
-        WHEN cret.review COLLATE Chinese_Traditional_Stroke_CI_AS LIKE N'%尚未送審%' THEN 0  -- 尚未送審
+        WHEN cret.review LIKE N'%通過%' THEN 1  -- 審核通過
+        WHEN cret.review LIKE N'%失敗%' THEN 2  -- 審核失敗
+        WHEN cret.review LIKE N'%審核中%' THEN 0  -- 審核中
+        WHEN cret.review LIKE N'%尚未送審%' THEN 0  -- 尚未送審
         ELSE 0  -- 預設為待審核
     END as ReviewStatus,
     COALESCE(cret.release_opinion, N'') as ReviewComment,
     -- ReviewDate: 送審日期 (reviewdate) 或 更新日期 (updatedate)
     CASE 
-        WHEN cret.reviewdate IS NOT NULL AND cret.reviewdate > 0
-        THEN DATEADD(SECOND, cret.reviewdate, '1970-01-01')
-        WHEN cret.updatedate IS NOT NULL AND cret.updatedate > 0
-        THEN DATEADD(SECOND, cret.updatedate, '1970-01-01')
+        WHEN cret.reviewdate IS NOT NULL AND ISNUMERIC(cret.reviewdate) = 1 AND CAST(cret.reviewdate AS BIGINT) > 0
+        THEN DATEADD(SECOND, CAST(cret.reviewdate AS BIGINT), '1970-01-01')
+        WHEN cret.updatedate IS NOT NULL AND ISNUMERIC(cret.updatedate) = 1 AND CAST(cret.updatedate AS BIGINT) > 0
+        THEN DATEADD(SECOND, CAST(cret.updatedate AS BIGINT), '1970-01-01')
         ELSE @MigrationStartTime
     END as ReviewDate,
     -- ApprovedDate: 只有審核通過才有通過日期
     CASE 
-        WHEN cret.review COLLATE Chinese_Traditional_Stroke_CI_AS LIKE N'%通過%' 
-             AND cret.passdate IS NOT NULL AND cret.passdate > 0
-        THEN DATEADD(SECOND, cret.passdate, '1970-01-01')
+        WHEN cret.review LIKE N'%通過%' 
+             AND cret.passdate IS NOT NULL AND ISNUMERIC(cret.passdate) = 1 AND CAST(cret.passdate AS BIGINT) > 0
+        THEN DATEADD(SECOND, CAST(cret.passdate AS BIGINT), '1970-01-01')
         ELSE NULL
     END as ApprovedDate,
     1 as ReviewerId, -- TODO: 需要建立審核者對應，目前設為預設管理員
