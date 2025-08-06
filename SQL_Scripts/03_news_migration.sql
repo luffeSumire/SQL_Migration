@@ -64,7 +64,6 @@ SELECT
     END as PublishDate,
     CASE 
         WHEN cn.type = 'certification' THEN '1'
-        WHEN cn.type = 'release' THEN '2' 
         WHEN cn.type = 'activity' THEN '3'
         WHEN cn.type = 'international' THEN '4'
         WHEN cn.type = 'other' THEN '5'
@@ -80,6 +79,7 @@ SELECT
     COALESCE(cn.sequence, 0) as SortOrder
 FROM EcoCampus_Maria3.dbo.custom_news cn
 WHERE cn.lan = 'zh_tw'
+  AND cn.type != 'release'  -- 排除校園投稿
 ORDER BY COALESCE(cn.createdate, 0), cn.sid;
 
 DECLARE @NewsCount INT = @@ROWCOUNT;
@@ -126,8 +126,18 @@ PRINT '✓ custom_article (news) → Articles 遷移完成: ' + CAST(@ArticleNew
 -- ========================================
 PRINT '步驟 3: 遷移 ArticleContents 中文內容...';
 
--- 遷移 custom_news 的中文內容（根據類型使用不同的內容來源）
-WITH NewsMapping AS (
+-- 遷移 custom_news 的中文內容（從 bookmark 系統獲取富文本內容）
+WITH BookmarkContent AS (
+    -- 取得每個新聞的 bookmark 內容（簡化版本）
+    SELECT 
+        b.table_sid as news_sid,
+        MAX(bt.content) as aggregated_content
+    FROM EcoCampus_Maria3.dbo.custom_bookmark b
+    INNER JOIN EcoCampus_Maria3.dbo.custom_bookmark_type bt ON b.sid = bt.bookmark_sid
+    WHERE b.table_cname = 'custom_news'
+    GROUP BY b.table_sid
+),
+NewsMapping AS (
     SELECT 
         ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as RowNum,
         cn.sid,
@@ -135,12 +145,16 @@ WITH NewsMapping AS (
         cn.type,
         cn.photo,
         CASE 
-            WHEN cn.type = 'release' THEN COALESCE(cret.release_tw_content, '')
-            ELSE COALESCE(cn.explanation, N'<p>' + cn.title + '</p>', '')
+            WHEN bc.aggregated_content IS NOT NULL AND bc.aggregated_content != '' 
+            THEN bc.aggregated_content
+            WHEN cn.explanation IS NOT NULL AND cn.explanation != ''
+            THEN cn.explanation
+            ELSE N'<p>' + cn.title + '</p>'
         END as content
     FROM EcoCampus_Maria3.dbo.custom_news cn
-    LEFT JOIN EcoCampus_Maria3.dbo.custom_release_en_tw cret ON cn.sid = cret.release_tw_sid
-    WHERE cn.lan = 'zh_tw'
+    LEFT JOIN BookmarkContent bc ON cn.sid = bc.news_sid
+    WHERE cn.lan = 'zh_tw' 
+      AND cn.type != 'release'  -- 排除校園投稿
 ),
 ArticleMapping AS (
     SELECT 
@@ -151,7 +165,7 @@ ArticleMapping AS (
         FROM Articles 
         WHERE CreatedTime = @MigrationStartTime
     ) ranked_articles
-    WHERE rn <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+    WHERE rn <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw' AND type != 'release')
 )
 INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
 SELECT 
@@ -197,7 +211,7 @@ ArticleMapping2 AS (
         FROM Articles 
         WHERE CreatedTime = @MigrationStartTime
     ) ranked_articles
-    WHERE rn > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+    WHERE rn > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw' AND type != 'release')
 )
 INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
 SELECT 
@@ -231,8 +245,18 @@ PRINT '✓ ArticleContents 中文版遷移完成: ' + CAST(@ContentsZhCount AS V
 -- ========================================
 PRINT '步驟 4: 遷移 ArticleContents 英文內容...';
 
--- 遷移英文內容（優先使用英文內容，再使用中文遞補）
-WITH NewsEnData AS (
+-- 遷移英文內容（英文版通常使用相同的 bookmark 內容或 explanation）
+WITH BookmarkContentEn AS (
+    -- 取得每個新聞的 bookmark 內容（英文版，簡化版本）
+    SELECT 
+        b.table_sid as news_sid,
+        MAX(bt.content) as aggregated_content
+    FROM EcoCampus_Maria3.dbo.custom_bookmark b
+    INNER JOIN EcoCampus_Maria3.dbo.custom_bookmark_type bt ON b.sid = bt.bookmark_sid
+    WHERE b.table_cname = 'custom_news'
+    GROUP BY b.table_sid
+),
+NewsEnData AS (
     SELECT 
         cn.sid,
         cn.title,
@@ -240,22 +264,16 @@ WITH NewsEnData AS (
         cn.photo,
         ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as SourceRowNum,
         CASE 
-            WHEN cn.type = 'release' THEN 
-                COALESCE(
-                    NULLIF(LTRIM(RTRIM(cret.release_en_content)), ''),  -- 英文內容優先
-                    NULLIF(LTRIM(RTRIM(cret.release_tw_content)), ''),  -- 中文遞補
-                    ''  -- 留白
-                )
-            ELSE 
-                COALESCE(
-                    NULLIF(LTRIM(RTRIM(cn.explanation)), ''),  -- explanation 優先
-                    N'<p>' + cn.title + '</p>',  -- 標題遞補
-                    ''  -- 留白
-                )
+            WHEN bc.aggregated_content IS NOT NULL AND bc.aggregated_content != '' 
+            THEN bc.aggregated_content
+            WHEN cn.explanation IS NOT NULL AND cn.explanation != ''
+            THEN cn.explanation
+            ELSE N'<p>' + cn.title + '</p>'
         END as content
     FROM EcoCampus_Maria3.dbo.custom_news cn
-    LEFT JOIN EcoCampus_Maria3.dbo.custom_release_en_tw cret ON cn.sid = cret.release_tw_sid
-    WHERE cn.lan = 'zh_tw'
+    LEFT JOIN BookmarkContentEn bc ON cn.sid = bc.news_sid
+    WHERE cn.lan = 'zh_tw' 
+      AND cn.type != 'release'  -- 排除校園投稿
 ),
 ArticleEnMapping AS (
     SELECT 
@@ -263,7 +281,7 @@ ArticleEnMapping AS (
         ROW_NUMBER() OVER (ORDER BY ArticleId) as TargetRowNum
     FROM Articles 
     WHERE CreatedTime = @MigrationStartTime
-      AND ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+      AND ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw' AND type != 'release')
 )
 INSERT INTO ArticleContents (ArticleId, LocaleCode, Title, CmsHtml, BannerFileId, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId)
 SELECT 
@@ -330,7 +348,8 @@ WITH SourceData AS (
         cn.sid as OriginalSid,
         ROW_NUMBER() OVER (ORDER BY COALESCE(cn.createdate, 0), cn.sid) as SourceRowNum
     FROM EcoCampus_Maria3.dbo.custom_news cn
-    WHERE cn.lan = 'zh_tw'
+    WHERE cn.lan = 'zh_tw' 
+      AND cn.type != 'release'  -- 排除校園投稿
 ),
 TargetData AS (
     SELECT 
@@ -341,7 +360,7 @@ TargetData AS (
         FROM Articles 
         WHERE CreatedTime = @MigrationStartTime
     ) ranked_articles
-    WHERE rn <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+    WHERE rn <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw' AND type != 'release')
 )
 INSERT INTO #NewsMapping (OriginalSid, ArticleId, SourceRowNum, TargetRowNum)
 SELECT 
@@ -394,7 +413,7 @@ INNER JOIN ArticleContents ac_en ON ac_zh.ArticleId = ac_en.ArticleId
 WHERE ac_zh.LocaleCode = 'zh-TW' 
   AND ac_en.LocaleCode = 'en'
   AND aa.CreatedTime = @MigrationStartTime
-  AND ac_zh.ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw');
+  AND ac_zh.ArticleId <= (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw' AND type != 'release');
 
 DROP TABLE #NewsMapping;
 
@@ -423,7 +442,7 @@ TargetData AS (
         FROM Articles 
         WHERE CreatedTime = @MigrationStartTime
     ) ranked_articles
-    WHERE rn > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw')
+    WHERE rn > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw' AND type != 'release')
 )
 INSERT INTO #ArticleMapping (OriginalSid, ArticleId, SourceRowNum, TargetRowNum)
 SELECT 
@@ -476,7 +495,7 @@ INNER JOIN ArticleContents ac_en ON ac_zh.ArticleId = ac_en.ArticleId
 WHERE ac_zh.LocaleCode = 'zh-TW' 
   AND ac_en.LocaleCode = 'en'
   AND aa.CreatedTime = @MigrationStartTime
-  AND ac_zh.ArticleId > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw');
+  AND ac_zh.ArticleId > (SELECT COUNT(*) FROM EcoCampus_Maria3.dbo.custom_news WHERE lan = 'zh_tw' AND type != 'release');
 
 DROP TABLE #ArticleMapping;
 
