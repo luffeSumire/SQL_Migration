@@ -64,7 +64,9 @@ CREATE TABLE #SchoolData (
     [HasForestPath] BIT,                     -- 是否有森林教育路徑
     [HasSeaProtectionPath] BIT,              -- 是否有海洋教育路徑
 	[IsExchangeSchool] BIT,                  -- 是否為交換學校
-	[IsInternalTest] BIT                     -- 是否為內部測試學校
+	[IsInternalTest] BIT,                    -- 是否為內部測試學校
+	[IsDeleted] BIT,                         -- 是否刪除 (is_del)
+	[IsUse] BIT                              -- 是否使用 (is_use)
 )
 
 -- 清除並重建審核狀態對照表
@@ -182,7 +184,9 @@ SELECT
     CMP.[forest] AS [HasForestPath], 
     CMP.[protection] AS [HasSeaProtectionPath], 
 	CM.[member_exchange], 
-	CM.[is_internal]
+	CM.[is_internal],
+	CM.[is_del],
+	CM.[is_use]
 FROM [EcoCampus_Maria3].[dbo].[custom_member] CM
 LEFT JOIN [EcoCampus_Maria3].[dbo].[sys_cityarea] SC1 ON
     SC1.[sid] = CM.[city_sid]
@@ -228,7 +232,11 @@ SELECT
     0 AS SortOrder,                      -- 排序順序（預設為0）
     SYSUTCDATETIME() AS CreatedTime,     -- 建立時間（目前時間）
     1 AS CreatedUserId,                  -- 建立者ID（預設為1）
-    1 AS Status                          -- 狀態（預設為啟用）
+    CASE 
+        WHEN G.[IsDeleted] = 1 OR G.[IsInternalTest] = 1 THEN 0  -- 軟刪除：is_del=1 或 is_internal=1
+        WHEN G.[IsUse] = 1 THEN 1        -- 啟用：is_use=1
+        ELSE 2                           -- 停用：其他情況
+    END AS Status
 FROM (
 	-- 將學校資料去重，只取唯一的學校資料
 	SELECT 
@@ -237,7 +245,9 @@ FROM (
 		[CityName],                      -- 城市名稱
 		[SchoolTypeName],                -- 學校類型名稱
 		[IsExchangeSchool],              -- 是否為交換學校
-		[IsInternalTest]                 -- 是否為內部測試學校
+		[IsInternalTest],                -- 是否為內部測試學校
+		[IsDeleted],                     -- 是否刪除
+		[IsUse]                          -- 是否使用
 	FROM #SchoolData
 	GROUP BY 
 		[OriginalSchoolId], 
@@ -245,7 +255,9 @@ FROM (
 		[CityName],
 		[SchoolTypeName], 
 		[IsExchangeSchool], 
-		[IsInternalTest]
+		[IsInternalTest],
+		[IsDeleted],
+		[IsUse]
 ) G
 LEFT JOIN [CountyTranslations] CT ON REPLACE(CT.[Name],'台' , '臺') = G.[CityName]  -- 關聯縣市翻譯表（處理台灣、臺灣的字體差异）
 LEFT JOIN #SchoolTypeMapping STM ON STM.[Text] = G.[SchoolTypeName]                  -- 關聯學校類型對照表
