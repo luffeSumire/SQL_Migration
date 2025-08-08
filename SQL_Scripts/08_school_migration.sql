@@ -4,7 +4,7 @@
 -- 此腳本用於將舊系統的學校資料遷移到新系統中
 -- 包含學校基本資料、認證狀態、環境教育路徑等資訊的轉換
 
-USE Ecocampus;
+USE Ecocampus_PreProduction;
 
 DECLARE @MigrationStartTime DATETIME2 = SYSDATETIME();
 PRINT '========================================';
