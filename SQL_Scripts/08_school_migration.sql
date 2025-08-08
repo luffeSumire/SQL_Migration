@@ -4,7 +4,7 @@
 -- 此腳本用於將舊系統的學校資料遷移到新系統中
 -- 包含學校基本資料、認證狀態、環境教育路徑等資訊的轉換
 
-USE Ecocampus_PreProduction;
+USE Ecocampus;
 
 DECLARE @MigrationStartTime DATETIME2 = SYSDATETIME();
 PRINT '========================================';
@@ -329,18 +329,36 @@ FROM
 		1 AS [UpdatedUserId]                 -- 更新者ID（預設為1）
 	FROM (
 		SELECT 
-			[OriginalSchoolId], 
-			[SchoolCode], 
-			[SchoolName], 
-			[SchoolEnName],
-			[SchoolIntroduction]
-		FROM #SchoolData
-		GROUP BY 
-			[OriginalSchoolId], [SchoolCode], [SchoolName], [SchoolEnName], [SchoolIntroduction]
-	) G
+			G1.[SchoolCode], 
+			SD2.[SchoolName], 
+			SD2.[SchoolEnName], 
+			SD2.[SchoolIntroduction]
+		FROM (
+			SELECT 
+				MAX([OriginalSchoolId]) AS [LatestOriginalSchoolId], 
+				[SchoolCode]
+			FROM #SchoolData
+			GROUP BY 
+				[SchoolCode]
+		) G1
+		LEFT JOIN (
+			SELECT 
+				[OriginalSchoolId], 
+				[SchoolName], 
+				[SchoolEnName], 
+				[SchoolIntroduction] 
+			FROM #SchoolData 
+			GROUP BY 
+				[OriginalSchoolId], 
+				[SchoolName], 
+				[SchoolEnName], 
+				[SchoolIntroduction]
+			) SD2 ON
+			SD2.[OriginalSchoolId] = G1.[LatestOriginalSchoolId]
+	) G2
 	UNPIVOT                              -- 使用UNPIVOT將中英文名稱轉為多筆記錄
 	(
-		[SchoolNewName] FOR [SchoolLanguageType] IN ([SchoolName], [SchoolEnName])  -- 將SchoolName和SchoolEnName欄位轉為多筆記錄
+		[SchoolNewName] FOR [SchoolLanguageType] IN (G2.[SchoolName], G2.[SchoolEnName])  -- 將SchoolName和SchoolEnName欄位轉為多筆記錄
 	) UPV
 	LEFT JOIN [Schools] S ON
 		S.[SchoolCode] = UPV.[SchoolCode]
