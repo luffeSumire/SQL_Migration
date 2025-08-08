@@ -230,6 +230,9 @@ INNER JOIN EcoCampus_Maria3.dbo.sys_files_store sfs ON crp.photo = sfs.name
 WHERE csc.LocaleCode = 'zh-TW'
   AND crp.photo IS NOT NULL AND crp.photo != '';
 
+DECLARE @AttachmentsZhCount INT = @@ROWCOUNT;
+PRINT '✓ 中文附件插入完成: ' + CAST(@AttachmentsZhCount AS VARCHAR) + ' 筆記錄';
+
 -- 為英文版複製附件記錄
 INSERT INTO CampusSubmissionAttachments (
     CampusSubmissionContentId,
@@ -259,8 +262,10 @@ WHERE csc_zh.LocaleCode = 'zh-TW'
   AND csc_en.LocaleCode = 'en'
   AND csa.CreatedTime = @MigrationStartTime;
 
-DECLARE @AttachmentsCount INT = @@ROWCOUNT;
-PRINT '✓ CampusSubmissionAttachments 遷移完成: ' + CAST(@AttachmentsCount AS VARCHAR) + ' 筆記錄';
+DECLARE @AttachmentsEnCount INT = @@ROWCOUNT;
+DECLARE @AttachmentsCount INT = @AttachmentsZhCount + @AttachmentsEnCount;
+PRINT '✓ 英文附件插入完成: ' + CAST(@AttachmentsEnCount AS VARCHAR) + ' 筆記錄';
+PRINT '✓ CampusSubmissionAttachments 總計: ' + CAST(@AttachmentsCount AS VARCHAR) + ' 筆記錄';
 
 -- ========================================
 -- 5. 遷移結果統計和驗證

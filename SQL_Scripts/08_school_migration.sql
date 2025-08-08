@@ -4,24 +4,43 @@
 -- 此腳本用於將舊系統的學校資料遷移到新系統中
 -- 包含學校基本資料、認證狀態、環境教育路徑等資訊的轉換
 
+USE Ecocampus_PreProduction;
+
+DECLARE @MigrationStartTime DATETIME2 = SYSDATETIME();
+PRINT '========================================';
+PRINT '學校資料遷移腳本開始執行';
+PRINT '執行時間: ' + CONVERT(VARCHAR, @MigrationStartTime, 120);
+PRINT '========================================';
+
 -- ========================================
 -- 第一部分：清除目標資料表中的相關資料
 -- ========================================
 -- 注意：由於外鍵約束，必須按照正確的順序清除資料
 -- 先清除依賴表，再清除主表
 
+PRINT '步驟 0: 清除 Schools 相關資料表...';
+
 -- 清空accounts表中的schoolid欄位（避免外鍵約束問題）
 UPDATE [Ecocampus_PreProduction].[dbo].[Accounts] SET SchoolId = NULL WHERE SchoolId IS NOT NULL
+PRINT '✓ 已清空 Accounts.SchoolId 筆數: ' + CAST(@@ROWCOUNT AS VARCHAR);
 
 -- 清除所有依賴Schools表的資料表（按依賴順序）
 DELETE FROM [Ecocampus_PreProduction].[dbo].[CampusSubmissions]            -- 校園申請資料
+PRINT ' - 已刪除 CampusSubmissions: ' + CAST(@@ROWCOUNT AS VARCHAR);
 DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolStatistics]             -- 學校統計資料
+PRINT ' - 已刪除 SchoolStatistics: ' + CAST(@@ROWCOUNT AS VARCHAR);
 DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolPrincipals]             -- 學校校長資料
+PRINT ' - 已刪除 SchoolPrincipals: ' + CAST(@@ROWCOUNT AS VARCHAR);
 DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]  -- 學校環境路徑狀態
+PRINT ' - 已刪除 SchoolEnvironmentalPathStatuses: ' + CAST(@@ROWCOUNT AS VARCHAR);
 DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolContacts]               -- 學校聯絡人資料
+PRINT ' - 已刪除 SchoolContacts: ' + CAST(@@ROWCOUNT AS VARCHAR);
 DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolContents]               -- 學校多語系內容
+PRINT ' - 已刪除 SchoolContents: ' + CAST(@@ROWCOUNT AS VARCHAR);
 DELETE FROM [Ecocampus_PreProduction].[dbo].[Certifications]               -- 認證資料
+PRINT ' - 已刪除 Certifications: ' + CAST(@@ROWCOUNT AS VARCHAR);
 DELETE FROM [Ecocampus_PreProduction].[dbo].[Schools]                      -- 學校主表（最後清除）
+PRINT ' - 已刪除 Schools: ' + CAST(@@ROWCOUNT AS VARCHAR);
 
 -- ========================================
 -- 第二部分：建立臨時資料表和對照表
@@ -151,6 +170,13 @@ INSERT INTO #CertificationLevelMapping ([OldLevel], [NewCertificationTypeId], [D
 (5, 3, '綠旗R2'),                        -- 5: 綠旗R2 -> CertificationTypeId = 3
 (6, 4, '綠旗R3')                         -- 6: 綠旗R3 -> CertificationTypeId = 4
 
+-- 初始化統計變數（放在最後一個 GO 之後，避免批次重置）
+DECLARE 
+	@SchoolsInserted INT = 0,
+	@SchoolContentsInserted INT = 0,
+	@CertificationsInserted INT = 0,
+	@EnvPathStatusesInserted INT = 0;
+
 INSERT INTO #SchoolData
 SELECT
     CM.[sid],
@@ -186,7 +212,7 @@ SELECT
 	CM.[member_exchange], 
 	CM.[is_internal],
 	CM.[is_del],
-	CM.[is_use]
+	CM.[isuse]
 FROM [EcoCampus_Maria3].[dbo].[custom_member] CM
 LEFT JOIN [EcoCampus_Maria3].[dbo].[sys_cityarea] SC1 ON
     SC1.[sid] = CM.[city_sid]
@@ -265,6 +291,9 @@ LEFT JOIN [Schools] S ON S.[SchoolCode] = G.[SchoolCode]                        
 WHERE 
 	S.[Id] IS NULL                   -- 只插入不存在的學校
 
+SET @SchoolsInserted = @@ROWCOUNT;
+PRINT '✓ Schools 插入完成: ' + CAST(@SchoolsInserted AS VARCHAR) + ' 筆';
+
 -- ========================================
 -- 第五部分：遷移學校多語系內容資料
 -- ========================================
@@ -321,6 +350,9 @@ LEFT JOIN [SchoolContents] SC ON
 WHERE 
 	D.[SchoolId] IS NOT NULL AND
 	SC.[SchoolId] IS NULL
+
+SET @SchoolContentsInserted = @@ROWCOUNT;
+PRINT '✓ SchoolContents 插入完成: ' + CAST(@SchoolContentsInserted AS VARCHAR) + ' 筆';
 
 -- ========================================
 -- 第六部分：遷移認證資料
@@ -384,6 +416,9 @@ GROUP BY
     SD.CertAddType,
 	SD.[CertIsDelete]
 ) G
+
+SET @CertificationsInserted = @@ROWCOUNT;
+PRINT '✓ Certifications 插入完成: ' + CAST(@CertificationsInserted AS VARCHAR) + ' 筆';
 
 -- ========================================
 -- 第七部分：遷移環境教育路徑狀態資料
@@ -458,6 +493,34 @@ WHERE
     SEPS.SchoolId IS NULL                                   -- 只插入不存在的記錄
 GROUP BY 
 	S.Id, EM.EnvId                                          -- 按學校ID和環境路徑ID分組
+
+SET @EnvPathStatusesInserted = @@ROWCOUNT;
+PRINT '✓ SchoolEnvironmentalPathStatuses 插入完成: ' + CAST(@EnvPathStatusesInserted AS VARCHAR) + ' 筆';
+
+-- ========================================
+-- 遷移結果統計與範例輸出
+-- ========================================
+PRINT '========================================';
+PRINT '學校資料遷移結果統計:';
+PRINT ' - Schools: ' + CAST(@SchoolsInserted AS VARCHAR) + ' 筆';
+PRINT ' - SchoolContents: ' + CAST(@SchoolContentsInserted AS VARCHAR) + ' 筆';
+PRINT ' - Certifications: ' + CAST(@CertificationsInserted AS VARCHAR) + ' 筆';
+PRINT ' - SchoolEnvironmentalPathStatuses: ' + CAST(@EnvPathStatusesInserted AS VARCHAR) + ' 筆';
+
+PRINT '遷移結果範例 (前5筆):';
+SELECT TOP 5 
+	s.Id as SchoolId,
+	s.SchoolCode,
+	s.Status,
+	sc.LocaleCode,
+	sc.Name as SchoolName
+FROM Schools s
+LEFT JOIN SchoolContents sc ON s.Id = sc.SchoolId AND sc.LocaleCode IN ('zh-TW','en')
+ORDER BY s.Id, sc.LocaleCode;
+
+PRINT '✅ 學校資料遷移腳本執行完成！';
+PRINT '執行完成時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
+PRINT '========================================';
 
 -- ========================================
 -- 學校資料遷移腳本執行完成
