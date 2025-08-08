@@ -24,12 +24,12 @@ PRINT '=== 清空 Accounts 和 MemberProfiles 表資料 ===';
 DELETE FROM MemberProfiles;
 
 -- 不清空 account_permission_group 表，保持現有資料
--- DELETE FROM account_permission_group WHERE accountSid != 1;
+-- DELETE FROM account_permission_group WHERE AccountId != 1;
 
--- 嘗試清空 Accounts 表 (可能因為外鍵約束失敗)
+-- 嘗試清空 Accounts 表，但保護系統帳號 ID=1
 BEGIN TRY
-    DELETE FROM Accounts;
-    PRINT 'Accounts 表已清空';
+    DELETE FROM Accounts WHERE AccountId != 1;
+    PRINT 'Accounts 表已清空 (保護系統帳號 ID=1)';
 END TRY
 BEGIN CATCH
     PRINT 'ERROR: 無法清空 Accounts 表，存在外鍵約束衝突';
@@ -53,7 +53,8 @@ SET IDENTITY_INSERT Accounts ON;
 MERGE Accounts AS target
 USING (
     SELECT 
-        cm.sid AS AccountId,
+        -- 如果來源ID=1，改為使用其他可用ID，避免與系統帳號衝突
+        CASE WHEN cm.sid = 1 THEN (SELECT MAX(sid) + 1 FROM EcoCampus_Maria3.dbo.custom_member) ELSE cm.sid END AS AccountId,
         NULL AS SchoolId,  -- 需要進一步分析學校對應關係
         cm.account AS Username,
         cm.password AS password,
@@ -239,7 +240,7 @@ INSERT INTO MemberProfiles (
     UpdatedUserId
 )
 SELECT 
-    cm.sid AS AccountId,  -- 關聯到 Accounts 表
+    CASE WHEN cm.sid = 1 THEN (SELECT MAX(sid) + 1 FROM EcoCampus_Maria3.dbo.custom_member) ELSE cm.sid END AS AccountId,  -- 關聯到 Accounts 表，避免與系統帳號衝突
     'zh-TW' AS LocaleCode,  -- 中文版本
     cm.citizen_digital_number AS CitizenDigitalNumber,
     cm.captcha AS captcha,
@@ -299,7 +300,7 @@ SELECT
     NULL AS UpdatedUserId   -- 舊系統沒有更新者ID
 FROM EcoCampus_Maria3.dbo.custom_member cm
 WHERE cm.sid IS NOT NULL  -- 確保有主鍵值
-    AND EXISTS (SELECT 1 FROM Accounts a WHERE a.AccountId = cm.sid)  -- 確保 Account 已存在
+    AND EXISTS (SELECT 1 FROM Accounts a WHERE a.AccountId = CASE WHEN cm.sid = 1 THEN (SELECT MAX(sid) + 1 FROM EcoCampus_Maria3.dbo.custom_member) ELSE cm.sid END)  -- 確保 Account 已存在
 ORDER BY cm.sid;
 
 PRINT '中文版 MemberProfiles 遷移完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
@@ -347,7 +348,7 @@ INSERT INTO MemberProfiles (
     UpdatedUserId
 )
 SELECT 
-    cm.sid AS AccountId,  -- 關聯到 Accounts 表
+    CASE WHEN cm.sid = 1 THEN (SELECT MAX(sid) + 1 FROM EcoCampus_Maria3.dbo.custom_member) ELSE cm.sid END AS AccountId,  -- 關聯到 Accounts 表，避免與系統帳號衝突
     'en' AS LocaleCode,   -- 英文版本
     cm.citizen_digital_number AS CitizenDigitalNumber,
     cm.captcha AS captcha,
@@ -407,7 +408,7 @@ SELECT
     NULL AS UpdatedUserId   -- 舊系統沒有更新者ID
 FROM EcoCampus_Maria3.dbo.custom_member cm
 WHERE cm.sid IS NOT NULL  -- 確保有主鍵值
-    AND EXISTS (SELECT 1 FROM Accounts a WHERE a.AccountId = cm.sid)  -- 確保 Account 已存在
+    AND EXISTS (SELECT 1 FROM Accounts a WHERE a.AccountId = CASE WHEN cm.sid = 1 THEN (SELECT MAX(sid) + 1 FROM EcoCampus_Maria3.dbo.custom_member) ELSE cm.sid END)  -- 確保 Account 已存在
     -- 為所有帳號建立英文版本，沒有英文資料則用中文遞補
 ORDER BY cm.sid;
 
