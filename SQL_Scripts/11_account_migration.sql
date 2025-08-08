@@ -408,10 +408,7 @@ SELECT
 FROM EcoCampus_Maria3.dbo.custom_member cm
 WHERE cm.sid IS NOT NULL  -- 確保有主鍵值
     AND EXISTS (SELECT 1 FROM Accounts a WHERE a.AccountId = cm.sid)  -- 確保 Account 已存在
-    -- 只有當至少有一個英文欄位有資料時才建立英文版本
-    AND (cm.member_cname_en IS NOT NULL 
-         OR cm.member_address_en IS NOT NULL 
-         OR cm.member_Introduction_en IS NOT NULL)
+    -- 為所有帳號建立英文版本，沒有英文資料則用中文遞補
 ORDER BY cm.sid;
 
 PRINT '英文版 MemberProfiles 遷移完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
