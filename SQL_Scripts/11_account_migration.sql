@@ -121,7 +121,7 @@ USING (
         CASE 
             WHEN cm.register_review = '已通過' THEN 1  -- 已審核通過
             WHEN cm.register_review = '待審核' THEN 0  -- 待審核  
-            WHEN cm.register_review = '未通過' THEN 2  -- 審核未通過
+            WHEN cm.register_review = '未通過' THEN 0  -- 審核未通過
             ELSE 0  -- 預設待審核
         END AS ReviewStatus
     FROM EcoCampus_Maria3.dbo.custom_member cm
@@ -189,10 +189,14 @@ PRINT 'MERGE 操作影響筆數: ' + CAST(@@ROWCOUNT AS VARCHAR(10));
 GO
 
 -- =============================================
--- STEP 3: 遷移 MemberProfiles 表資料  
+-- STEP 3: 遷移 MemberProfiles 表資料 (多語系支援)
 -- =============================================
 PRINT '=== 開始遷移 MemberProfiles 表 ===';
 
+-- 先清空 MemberProfiles 表
+DELETE FROM MemberProfiles;
+
+-- 插入中文版本的 MemberProfiles
 INSERT INTO MemberProfiles (
     AccountId,
     LocaleCode,
@@ -236,12 +240,12 @@ INSERT INTO MemberProfiles (
 )
 SELECT 
     cm.sid AS AccountId,  -- 關聯到 Accounts 表
-    COALESCE(cm.lan, 'zh-TW') AS LocaleCode,
+    'zh-TW' AS LocaleCode,  -- 中文版本
     cm.citizen_digital_number AS CitizenDigitalNumber,
     cm.captcha AS captcha,
     cm.code AS code,
-    cm.member_cname AS MemberName,
-    cm.member_address_en AS MemberAddress,  -- 英文地址
+    cm.member_cname AS MemberName,  -- 中文姓名
+    cm.member_address AS MemberAddress,  -- 中文地址
     cm.member_tel AS MemberTelephone,
     cm.member_phone AS MemberPhone,
     cm.member_email AS MemberEmail,
@@ -249,16 +253,7 @@ SELECT
     cm.job_cname AS JobName,
     cm.place_sid AS PlaceId,
     cm.place_cname AS PlaceName,
-    -- 處理會員介紹 (中英文合併)
-    CASE 
-        WHEN cm.member_Introduction IS NOT NULL AND cm.member_Introduction_en IS NOT NULL 
-        THEN cm.member_Introduction + CHAR(13) + CHAR(10) + '[EN] ' + cm.member_Introduction_en
-        WHEN cm.member_Introduction IS NOT NULL 
-        THEN cm.member_Introduction
-        WHEN cm.member_Introduction_en IS NOT NULL 
-        THEN '[EN] ' + cm.member_Introduction_en
-        ELSE NULL
-    END AS MemberIntroduction,
+    cm.member_Introduction AS MemberIntroduction,  -- 中文介紹
     cm.member_photo AS MemberPhotoFileId,  -- 需要進一步處理檔案ID對應
     cm.member_role AS MemberRole,
     cm.member_exchange AS MemberExchange,
@@ -307,8 +302,129 @@ WHERE cm.sid IS NOT NULL  -- 確保有主鍵值
     AND EXISTS (SELECT 1 FROM Accounts a WHERE a.AccountId = cm.sid)  -- 確保 Account 已存在
 ORDER BY cm.sid;
 
-PRINT '=== MemberProfiles 表遷移完成 ===';
-PRINT 'MemberProfiles 遷移筆數: ' + CAST(@@ROWCOUNT AS VARCHAR(10));
+PRINT '中文版 MemberProfiles 遷移完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
+
+-- 插入英文版本的 MemberProfiles (僅當有英文資料時)
+INSERT INTO MemberProfiles (
+    AccountId,
+    LocaleCode,
+    CitizenDigitalNumber,
+    captcha,
+    code,
+    MemberName,
+    MemberAddress,
+    MemberTelephone,
+    MemberPhone,
+    MemberEmail,
+    JobId,
+    JobName,
+    PlaceId,
+    PlaceName,
+    MemberIntroduction,
+    MemberPhotoFileId,
+    MemberRole,
+    MemberExchange,
+    MemberUrl,
+    TagId,
+    isuse,
+    IsDeleted,
+    IsInternal,
+    AreaAttributes,
+    UpdatePasswordTime,
+    MemberPassTime,
+    RegisterReview,
+    UseMemberRecordId,
+    ReviewMemberRecordId,
+    CreateDateTimestamp,
+    CreateUserName,
+    CreateIp,
+    UpdateDateTimestamp,
+    UpdateUserName,
+    UpdateIp,
+    CreatedTime,
+    CreatedUserId,
+    UpdatedTime,
+    UpdatedUserId
+)
+SELECT 
+    cm.sid AS AccountId,  -- 關聯到 Accounts 表
+    'en' AS LocaleCode,   -- 英文版本
+    cm.citizen_digital_number AS CitizenDigitalNumber,
+    cm.captcha AS captcha,
+    cm.code AS code,
+    COALESCE(cm.member_cname_en, cm.member_cname) AS MemberName,  -- 英文姓名，沒有則用中文
+    COALESCE(cm.member_address_en, cm.member_address) AS MemberAddress,  -- 英文地址，沒有則用中文
+    cm.member_tel AS MemberTelephone,
+    cm.member_phone AS MemberPhone,
+    cm.member_email AS MemberEmail,
+    cm.job_sid AS JobId,
+    cm.job_cname AS JobName,  -- 英文職位名稱待處理
+    cm.place_sid AS PlaceId,
+    cm.place_cname AS PlaceName,  -- 英文地點名稱待處理
+    COALESCE(cm.member_Introduction_en, cm.member_Introduction) AS MemberIntroduction,  -- 英文介紹，沒有則用中文
+    cm.member_photo AS MemberPhotoFileId,
+    cm.member_role AS MemberRole,
+    cm.member_exchange AS MemberExchange,
+    cm.member_url AS MemberUrl,
+    -- 處理 TagId 外鍵約束，只保留存在的值
+    CASE 
+        WHEN cm.tag_sid IS NOT NULL AND EXISTS (SELECT 1 FROM GuidanceTags gt WHERE gt.GuidanceTagId = cm.tag_sid)
+        THEN cm.tag_sid
+        ELSE NULL
+    END AS TagId,
+    cm.isuse AS isuse,
+    cm.is_del AS IsDeleted,
+    cm.is_internal AS IsInternal,
+    cm.area_attributes AS AreaAttributes,
+    cm.update_password_date_new AS UpdatePasswordTime,
+    -- 會員通過時間轉換
+    CASE 
+        WHEN cm.member_passdate IS NOT NULL AND cm.member_passdate != ''
+        THEN TRY_CONVERT(datetime2, cm.member_passdate)
+        ELSE NULL
+    END AS MemberPassTime,
+    cm.register_review AS RegisterReview,
+    cm.use_member_record_sid AS UseMemberRecordId,
+    cm.review_member_record_sid AS ReviewMemberRecordId,
+    cm.createdate AS CreateDateTimestamp,
+    cm.createuser AS CreateUserName,
+    cm.createip AS CreateIp,
+    cm.updatedate AS UpdateDateTimestamp,
+    cm.updateuser AS UpdateUserName,
+    cm.updateip AS UpdateIp,
+    -- CreatedTime 和 UpdatedTime 轉換
+    CASE 
+        WHEN cm.createdate IS NOT NULL AND cm.createdate > 0 
+        THEN DATEADD(second, cm.createdate, '1970-01-01 00:00:00')
+        ELSE GETDATE()
+    END AS CreatedTime,
+    NULL AS CreatedUserId,  -- 舊系統沒有創建者ID
+    CASE 
+        WHEN cm.updatedate IS NOT NULL AND cm.updatedate > 0 
+        THEN DATEADD(second, cm.updatedate, '1970-01-01 00:00:00')
+        ELSE GETDATE()
+    END AS UpdatedTime,
+    NULL AS UpdatedUserId   -- 舊系統沒有更新者ID
+FROM EcoCampus_Maria3.dbo.custom_member cm
+WHERE cm.sid IS NOT NULL  -- 確保有主鍵值
+    AND EXISTS (SELECT 1 FROM Accounts a WHERE a.AccountId = cm.sid)  -- 確保 Account 已存在
+    -- 只有當至少有一個英文欄位有資料時才建立英文版本
+    AND (cm.member_cname_en IS NOT NULL 
+         OR cm.member_address_en IS NOT NULL 
+         OR cm.member_Introduction_en IS NOT NULL)
+ORDER BY cm.sid;
+
+PRINT '英文版 MemberProfiles 遷移完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
+PRINT '=== MemberProfiles 表總遷移完成 ===';
+
+-- 統計多語系資料
+SELECT 
+    LocaleCode,
+    COUNT(*) AS 記錄數量
+FROM MemberProfiles
+GROUP BY LocaleCode
+ORDER BY LocaleCode;
+
 GO
 
 -- =============================================
