@@ -23,8 +23,8 @@ PRINT '=== 清空 Accounts 和 MemberProfiles 表資料 ===';
 -- 先嘗試刪除 MemberProfiles (有外鍵依賴)
 DELETE FROM MemberProfiles;
 
--- 清空 account_permission_group 表 (完整清空，因為會重新建立)  
-DELETE FROM account_permission_group;
+-- 不清空 account_permission_group 表，保持現有資料
+-- DELETE FROM account_permission_group WHERE accountSid != 1;
 
 -- 嘗試清空 Accounts 表 (可能因為外鍵約束失敗)
 BEGIN TRY
