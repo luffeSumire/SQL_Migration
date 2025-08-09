@@ -19,18 +19,26 @@ PRINT '=== 開始更新學校夥伴帳戶的SchoolId ===';
 
 DECLARE @UpdatedCount INT = 0;
 
--- 更新IsSchoolPartner=1使用者的SchoolId
+-- 更新IsSchoolPartner=1使用者的SchoolId (包含手動修正的學校代碼)
 UPDATE a
 SET SchoolId = s.Id
 FROM Accounts a
 INNER JOIN (
     SELECT 
         CASE WHEN cm.sid = 1 THEN (SELECT MAX(sid) + 1 FROM EcoCampus_Maria3.dbo.custom_member) ELSE cm.sid END AS AccountId,
-        cm.code AS SchoolCode
+        -- 處理08腳本中手動修正的學校代碼
+        CASE 
+            WHEN cm.sid = 812 THEN '193665'  -- 市立大崗國小
+            WHEN cm.sid = 603 THEN '034639'  -- 私立惠明盲校
+            WHEN cm.sid = 796 THEN '061F01'  -- 臺中市北屯區廍子國民小學
+            ELSE cm.code
+        END AS SchoolCode
     FROM EcoCampus_Maria3.dbo.custom_member cm
     WHERE cm.member_role = 'school'
-      AND cm.code IS NOT NULL
-      AND cm.code != ''
+      AND (
+          (cm.code IS NOT NULL AND cm.code != '')  -- 原本有code的
+          OR cm.sid IN (812, 603, 796)            -- 或是手動修正的三筆
+      )
 ) cm_mapping ON a.AccountId = cm_mapping.AccountId
 INNER JOIN Schools s ON s.SchoolCode = cm_mapping.SchoolCode
 WHERE a.IsSchoolPartner = 1
@@ -89,11 +97,19 @@ BEGIN
         a.AccountId,
         a.Username,
         cm.code as OriginalSchoolCode,
-        cm.member_cname as OriginalSchoolName
+        cm.member_cname as OriginalSchoolName,
+        -- 顯示修正後的學校代碼
+        CASE 
+            WHEN cm.sid = 812 THEN '193665'  -- 市立大崗國小
+            WHEN cm.sid = 603 THEN '034639'  -- 私立惠明盲校
+            WHEN cm.sid = 796 THEN '061F01'  -- 臺中市北屯區廍子國民小學
+            ELSE cm.code
+        END AS CorrectedSchoolCode
     FROM Accounts a
     LEFT JOIN (
         SELECT 
             CASE WHEN cm.sid = 1 THEN (SELECT MAX(sid) + 1 FROM EcoCampus_Maria3.dbo.custom_member) ELSE cm.sid END AS AccountId,
+            cm.sid,
             cm.code,
             cm.member_cname
         FROM EcoCampus_Maria3.dbo.custom_member cm
