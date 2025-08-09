@@ -16,6 +16,16 @@ PRINT '校園投稿遷移腳本開始執行';
 PRINT '執行時間: ' + CONVERT(VARCHAR, @MigrationStartTime, 120);
 PRINT '========================================';
 
+-- 檢查前置條件：確認 Schools 表已存在且有資料
+DECLARE @SchoolCount INT = (SELECT COUNT(*) FROM Schools);
+IF @SchoolCount = 0
+BEGIN
+    PRINT '❌ 錯誤：Schools 表沒有資料，請先執行 08_school_migration.sql';
+    PRINT '校園投稿遷移需要依賴 Schools 表進行 SchoolId 對應';
+    RETURN;
+END
+PRINT '✓ 前置檢查通過：Schools 表包含 ' + CAST(@SchoolCount AS VARCHAR) + ' 筆學校資料';
+
 -- ========================================
 -- 0. 清空 CampusSubmissions 相關資料表
 -- ========================================
@@ -82,17 +92,18 @@ SELECT
     1 as UpdatedUserId, -- cn.member_sid,
     CASE WHEN cn.is_show = 1 THEN 1 ELSE 0 END as Status,
     COALESCE(cn.sequence, 0) as SortOrder,
-    -- 通過member_sid關聯正確的學校ID
-    CASE 
-        WHEN cn.member_sid IS NOT NULL THEN (
-            SELECT TOP 1 s.Id 
-            FROM Schools s
-            INNER JOIN EcoCampus_Maria3.dbo.custom_member cm ON s.SchoolCode = cm.code
-            WHERE cm.sid = cn.member_sid AND cm.member_role = 'school'
-        )
-        ELSE 1 -- 找不到對應學校時使用預設值
-    END as SchoolId
+    -- 透過 member_sid 對應到學校ID，使用與11.5腳本相同的邏輯
+    COALESCE(s.Id, 1) as SchoolId -- 若找不到對應學校則預設為1
 FROM EcoCampus_Maria3.dbo.custom_news cn
+-- 關聯 custom_member 取得學校代碼
+LEFT JOIN EcoCampus_Maria3.dbo.custom_member cm ON cn.member_sid = cm.sid AND cm.member_role = 'school'
+-- 關聯 Schools 表取得新系統的學校ID (使用與08腳本相同的修正邏輯)
+LEFT JOIN EcoCampus_PreProduction.dbo.Schools s ON s.SchoolCode = CASE 
+    WHEN cm.sid = 812 THEN '193665'  -- 市立大崗國小 (手動修正)
+    WHEN cm.sid = 603 THEN '034639'  -- 私立惠明盲校 (手動修正) 
+    WHEN cm.sid = 796 THEN '061F01'  -- 臺中市北屯區廍子國民小學 (手動修正)
+    ELSE cm.code
+END
 WHERE cn.lan = 'zh_tw'
   AND cn.type = 'release'  -- 只處理校園投稿
 ORDER BY COALESCE(cn.createdate, 0), cn.sid;
@@ -283,6 +294,13 @@ PRINT '========================================';
 PRINT '遷移結果統計:';
 PRINT '========================================';
 
+-- 校園投稿 SchoolId 對應統計
+DECLARE @MappedSchools INT = (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime AND SchoolId > 1);
+DECLARE @DefaultSchools INT = (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime AND SchoolId = 1);
+PRINT 'SchoolId 對應統計:';
+PRINT '- 成功對應到學校: ' + CAST(@MappedSchools AS VARCHAR) + ' 筆';
+PRINT '- 使用預設值(SchoolId=1): ' + CAST(@DefaultSchools AS VARCHAR) + ' 筆';
+
 SELECT 
     '校園投稿遷移完成統計' as [遷移項目],
     (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime) as [CampusSubmissions主表],
@@ -297,15 +315,20 @@ PRINT '遷移結果範例 (前5筆):';
 
 SELECT TOP 5
     cs.CampusSubmissionId as [投稿ID],
+    cs.SchoolId as [學校ID],
+    COALESCE(sc.Name, '未知學校') as [學校名稱],
     cs.SubmissionDate as [投稿日期],
     csc.Title as [標題],
-    LEFT(COALESCE(csc.Description, ''), 50) + '...' as [內容預覽],
+    LEFT(COALESCE(csc.Description, ''), 30) + '...' as [內容預覽],
     csc.LocaleCode as [語言],
     cs.Status as [狀態]
 FROM CampusSubmissions cs
 INNER JOIN CampusSubmissionContents csc ON cs.CampusSubmissionId = csc.CampusSubmissionId
+LEFT JOIN Schools s ON cs.SchoolId = s.Id
+LEFT JOIN SchoolContents sc ON s.Id = sc.SchoolId AND sc.LocaleCode = 'zh-TW'
 WHERE cs.CreatedTime = @MigrationStartTime
-ORDER BY cs.CampusSubmissionId, csc.LocaleCode;
+  AND csc.LocaleCode = 'zh-TW'  -- 只顯示中文版本避免重複
+ORDER BY cs.CampusSubmissionId;
 
 -- ========================================
 -- 7. 重要提醒和後續工作
@@ -314,8 +337,8 @@ PRINT '========================================';
 PRINT '⚠️  重要提醒:';
 PRINT '1. member_sid 對應問題：目前所有 CreatedUserId/UpdatedUserId 都設為 1';
 PRINT '   需要建立 custom_news.member_sid → 新系統 UserId 的對應表';
-PRINT '2. SchoolId 對應問題：目前都設為預設值 1 (Schools.Id=1)';
-PRINT '   需要根據 member_sid 或其他欄位建立學校對應關係';
+PRINT '2. SchoolId 對應：已透過 member_sid → custom_member.code → Schools.SchoolCode 建立關聯';
+PRINT '   未能對應的投稿項目會使用預設值 SchoolId=1';
 PRINT '3. FileEntry 對應：部分照片可能找不到對應的 FileEntry 記錄';
 PRINT '   請檢查 FileEntry 表是否包含所有 custom_release_photo.photo 檔案';
 PRINT '========================================';
@@ -329,5 +352,7 @@ PRINT '- 校園投稿主表: ' + CAST(@CampusSubmissionCount AS VARCHAR) + ' 筆
 PRINT '- 中文內容: ' + CAST(@ContentsZhCount AS VARCHAR) + ' 筆';
 PRINT '- 英文內容: ' + CAST(@ContentsEnCount AS VARCHAR) + ' 筆';
 PRINT '- 照片附件: ' + CAST(@AttachmentsCount AS VARCHAR) + ' 筆';
+PRINT '- 成功對應學校: ' + CAST(@MappedSchools AS VARCHAR) + ' 筆';
+PRINT '- 使用預設學校: ' + CAST(@DefaultSchools AS VARCHAR) + ' 筆';
 PRINT '執行完成時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
