@@ -55,7 +55,7 @@ USING (
     SELECT 
         -- 如果來源ID=1，改為使用其他可用ID，避免與系統帳號衝突
         CASE WHEN cm.sid = 1 THEN (SELECT MAX(sid) + 1 FROM EcoCampus_Maria3.dbo.custom_member) ELSE cm.sid END AS AccountId,
-        NULL AS SchoolId,  -- 需要進一步分析學校對應關係
+        NULL AS SchoolId,  -- SchoolId將在11.5_update_school_accounts_schoolid.sql中設定
         cm.account AS Username,
         cm.password AS password,
         cm.password_salt AS PasswordSalt,

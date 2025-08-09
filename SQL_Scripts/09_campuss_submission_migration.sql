@@ -82,7 +82,16 @@ SELECT
     1 as UpdatedUserId, -- cn.member_sid,
     CASE WHEN cn.is_show = 1 THEN 1 ELSE 0 END as Status,
     COALESCE(cn.sequence, 0) as SortOrder,
-    1 as SchoolId -- 暫時設為預設值 1，後續需建立學校對應關係
+    -- 通過member_sid關聯正確的學校ID
+    CASE 
+        WHEN cn.member_sid IS NOT NULL THEN (
+            SELECT TOP 1 s.Id 
+            FROM Schools s
+            INNER JOIN EcoCampus_Maria3.dbo.custom_member cm ON s.SchoolCode = cm.code
+            WHERE cm.sid = cn.member_sid AND cm.member_role = 'school'
+        )
+        ELSE 1 -- 找不到對應學校時使用預設值
+    END as SchoolId
 FROM EcoCampus_Maria3.dbo.custom_news cn
 WHERE cn.lan = 'zh_tw'
   AND cn.type = 'release'  -- 只處理校園投稿
