@@ -18,15 +18,12 @@ GO
 -- =============================================
 PRINT '=== 第一步：遷移後台管理帳號 ===';
 
--- 啟用 IDENTITY_INSERT 以插入指定的 AccountId
-SET IDENTITY_INSERT Accounts ON;
-
 -- 使用 MERGE 處理後台帳號遷移
 MERGE Accounts AS target
 USING (
     SELECT 
-        -- 後台帳號使用負數 ID 避免與前台帳號衝突
-        -(sa.sid) AS AccountId,
+        -- 後台帳號往後插入，不指定 AccountId
+        NULL AS AccountId,
         NULL AS SchoolId,
         sa.account AS Username,
         sa.password AS password,
@@ -76,20 +73,22 @@ USING (
         CASE WHEN ISNULL(sa.isuse, 1) = 1 THEN 1 ELSE 0 END AS Status,
         NULL AS DeletedTime,
         NULL AS DeletedUserId,
-        1 AS ReviewStatus -- 後台帳號預設已審核
+        1 AS ReviewStatus, -- 後台帳號預設已審核
+        sa.sid AS OriginalSysAccountId -- 記錄原始 sys_account.sid 以便後續對應
     FROM [EcoCampus_Maria3].[dbo].[sys_account] sa
     WHERE sa.sid IS NOT NULL 
+      AND sa.sid != 1  -- 忽略舊系統的 sys_account.sid=1 的對象
       AND sa.account IS NOT NULL 
       AND sa.account != ''
 ) AS source
-ON target.AccountId = source.AccountId
+ON target.Username = source.Username -- 使用 Username 作為比對條件
 WHEN NOT MATCHED THEN
-    INSERT (AccountId, SchoolId, Username, password, PasswordSalt, email, Telephone, phone, birthday,
+    INSERT (SchoolId, Username, password, PasswordSalt, email, Telephone, phone, birthday,
             CityId, AreaId, PostCode, address, DutyDate, DepartureDate, ContactName, ContactPhone, 
             ContactRelationship, ProfilePhotoFileId, SortOrder, Language, CreatedUserId, UpdatedUserId,
             IsSystemAdmin, IsSchoolPartner, IsEpaUser, IsGuidanceTeam, GuidanceTagId, CountyId, 
             GovernmentUnitId, CreatedTime, UpdatedTime, Status, DeletedTime, DeletedUserId, ReviewStatus)
-    VALUES (source.AccountId, source.SchoolId, source.Username, source.password, source.PasswordSalt, 
+    VALUES (source.SchoolId, source.Username, source.password, source.PasswordSalt, 
             source.email, source.Telephone, source.phone, source.birthday, source.CityId, source.AreaId,
             source.PostCode, source.address, source.DutyDate, source.DepartureDate, source.ContactName,
             source.ContactPhone, source.ContactRelationship, source.ProfilePhotoFileId, source.SortOrder,
@@ -97,9 +96,6 @@ WHEN NOT MATCHED THEN
             source.IsSchoolPartner, source.IsEpaUser, source.IsGuidanceTeam, source.GuidanceTagId,
             source.CountyId, source.GovernmentUnitId, source.CreatedTime, source.UpdatedTime, 
             source.Status, source.DeletedTime, source.DeletedUserId, source.ReviewStatus);
-
--- 關閉 IDENTITY_INSERT
-SET IDENTITY_INSERT Accounts OFF;
 
 PRINT '後台管理帳號遷移完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
 GO
@@ -183,7 +179,7 @@ PRINT '前台帳號群組對應遷移完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10))
 MERGE account_permission_group AS target
 USING (
     SELECT DISTINCT
-        -(sa.sid) as accountSid, -- 對應後台帳號負數 ID
+        a.AccountId as accountSid, -- 使用實際生成的 AccountId
         sa.groups_sid as groupSid,
         GETDATE() as createTime,
         1 as createUser,
@@ -191,10 +187,12 @@ USING (
         1 as updateUser,
         1 as dataStatus
     FROM [EcoCampus_Maria3].[dbo].[sys_account] sa
-    INNER JOIN Accounts a ON a.AccountId = -(sa.sid) -- 確保後台帳號存在
+    INNER JOIN Accounts a ON a.Username = sa.account -- 透過 Username 找到對應的後台帳號
     INNER JOIN permission_group pg ON pg.sid = sa.groups_sid -- 確保群組存在
     WHERE sa.sid IS NOT NULL
+      AND sa.sid != 1  -- 忽略舊系統的 sys_account.sid=1 的對象
       AND sa.groups_sid IS NOT NULL
+      AND a.IsSystemAdmin = 1 -- 確保是後台管理帳號
 ) AS source
 ON target.accountSid = source.accountSid AND target.groupSid = source.groupSid
 WHEN NOT MATCHED THEN
@@ -317,12 +315,12 @@ PRINT '=== 遷移完成統計 ===';
 SELECT 
     '後台管理帳號' as 類型, COUNT(*) as 數量 
 FROM Accounts 
-WHERE AccountId < 0
+WHERE IsSystemAdmin = 1
 UNION ALL
 SELECT 
     '前台會員帳號' as 類型, COUNT(*) as 數量 
 FROM Accounts 
-WHERE AccountId > 0
+WHERE IsSystemAdmin = 0
 UNION ALL
 SELECT 
     '權限群組總數' as 類型, COUNT(*) as 數量 
