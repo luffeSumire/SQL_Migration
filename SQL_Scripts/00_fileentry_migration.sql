@@ -42,7 +42,11 @@ INSERT INTO EcoCampus_PreProduction.dbo.FileEntry
 SELECT
     NEWID() AS Id,
     N'File' AS Type,
-    '/uploads/' + s.file_path AS Path, -- TODO: 舊系統 file_path 有的是 admin/resource/ 有的是 /resource/ 需要統一處理
+    -- 統一處理路徑格式：移除 'admin/' 前綴，保留 SUBSTRING 語法便於部署時調整
+    CASE 
+        WHEN s.file_path LIKE 'admin/%' THEN '/uploads/' + SUBSTRING(s.file_path, 7, LEN(s.file_path)) -- 移除 'admin/' 前綴 (7 = LEN('admin/') + 1)
+        ELSE '/uploads/' + s.file_path -- 保持原樣，以防有其他格式
+    END AS Path,
     s.name AS OriginalFileName,
     s.file_ext AS OriginalExtension,
     s.name AS FileName,
@@ -56,8 +60,47 @@ WHERE NOT EXISTS (
 
 SET @Inserted = @@ROWCOUNT;
 
+-- ========================================
+-- 2. 路徑處理統計
+-- ========================================
+DECLARE @AdminPathCount INT = (
+    SELECT COUNT(*) 
+    FROM EcoCampus_PreProduction.dbo.FileEntry fe
+    INNER JOIN EcoCampus_Maria3.dbo.sys_files_store s ON fe.FileName = s.name
+    WHERE s.file_path LIKE 'admin/%'
+);
+
+DECLARE @OtherPathCount INT = (
+    SELECT COUNT(*) 
+    FROM EcoCampus_PreProduction.dbo.FileEntry fe
+    INNER JOIN EcoCampus_Maria3.dbo.sys_files_store s ON fe.FileName = s.name
+    WHERE s.file_path NOT LIKE 'admin/%'
+);
+
 PRINT '========================================';
 PRINT '匯入完成統計:';
 PRINT '- 新增筆數: ' + CAST(@Inserted AS VARCHAR);
+PRINT '';
+PRINT '路徑格式處理統計:';
+PRINT '- admin/ 開頭路徑: ' + CAST(@AdminPathCount AS VARCHAR) + ' 筆 → 移除 admin/ 前綴';
+PRINT '- 其他路徑: ' + CAST(@OtherPathCount AS VARCHAR) + ' 筆 → 保持原樣';
+PRINT '';
+
+-- 顯示路徑轉換範例
+IF @AdminPathCount > 0
+BEGIN
+    PRINT '路徑轉換範例:';
+    
+    -- admin/ 開頭路徑範例
+    SELECT TOP 3 
+        s.file_path as [原路徑],
+        fe.Path as [新路徑]
+    FROM EcoCampus_PreProduction.dbo.FileEntry fe
+    INNER JOIN EcoCampus_Maria3.dbo.sys_files_store s ON fe.FileName = s.name
+    WHERE s.file_path LIKE 'admin/%'
+    ORDER BY s.name;
+END
+
+PRINT '';
 PRINT '完成時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
