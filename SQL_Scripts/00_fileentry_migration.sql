@@ -42,7 +42,7 @@ INSERT INTO EcoCampus_PreProduction.dbo.FileEntry
 SELECT
     NEWID() AS Id,
     N'File' AS Type,
-    '/uploads/' + s.file_path AS Path,
+    '/uploads/' + s.file_path AS Path, -- TODO: 舊系統 file_path 有的是 admin/resource/ 有的是 /resource/ 需要統一處理
     s.name AS OriginalFileName,
     s.file_ext AS OriginalExtension,
     s.name AS FileName,

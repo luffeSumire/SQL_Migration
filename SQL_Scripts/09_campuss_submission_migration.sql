@@ -27,6 +27,28 @@ END
 PRINT '✓ 前置檢查通過：Schools 表包含 ' + CAST(@SchoolCount AS VARCHAR) + ' 筆學校資料';
 
 -- ========================================
+-- 建立認證等級到BadgeType的映射表
+-- ========================================
+-- 創建臨時映射表
+IF OBJECT_ID('tempdb..#LevelToBadgeMapping') IS NOT NULL DROP TABLE #LevelToBadgeMapping;
+CREATE TABLE #LevelToBadgeMapping (
+    OldLevel INT,           -- 舊系統認證等級
+    BadgeTypeId INT,        -- 新系統BadgeType ID
+    Description NVARCHAR(50)
+);
+
+-- 插入映射資料 (根據08腳本的邏輯)
+INSERT INTO #LevelToBadgeMapping (OldLevel, BadgeTypeId, Description) VALUES 
+(1, 2, '銅牌 -> 銀牌徽章'),     -- 銅牌對應銀牌徽章
+(2, 2, '銀牌 -> 銀牌徽章'),     -- 銀牌對應銀牌徽章  
+(3, 1, '綠旗 -> 綠旗徽章'),     -- 綠旗對應綠旗徽章
+(4, 1, '綠旗R1 -> 綠旗徽章'),   -- 綠旗R1對應綠旗徽章
+(5, 1, '綠旗R2 -> 綠旗徽章'),   -- 綠旗R2對應綠旗徽章
+(6, 1, '綠旗R3 -> 綠旗徽章');   -- 綠旗R3對應綠旗徽章
+
+PRINT '✓ 認證等級到BadgeType映射表建立完成';
+
+-- ========================================
 -- 0. 清空 CampusSubmissions 相關資料表
 -- ========================================
 PRINT '步驟 0: 清空 CampusSubmissions 相關資料表...';
@@ -83,7 +105,8 @@ SELECT
         THEN DATEADD(SECOND, cn.createdate, '1970-01-01')
         ELSE '2015-01-01'
     END as SubmissionDate,
-    1 as BadgeType, -- 預設徽章類型
+    -- 根據投稿時間當下學校的最高認證等級決定BadgeType
+    COALESCE(badge_mapping.BadgeTypeId, 2) as BadgeType, -- 找不到認證則預設為銀牌徽章(ID=2)
     CASE WHEN cn.is_home = 1 THEN 1 ELSE 0 END as FeaturedStatus,
     @MigrationStartTime as CreatedTime,
     -- TODO: member_sid 對應問題 - 目前先設為 1，需要後續建立 member_sid 對應表
@@ -104,6 +127,29 @@ LEFT JOIN EcoCampus_PreProduction.dbo.Schools s ON s.SchoolCode = CASE
     WHEN cm.sid = 796 THEN '061F01'  -- 臺中市北屯區廍子國民小學 (手動修正)
     ELSE cm.code
 END
+-- 關聯投稿時間當下學校的最高認證等級
+LEFT JOIN (
+    SELECT 
+        cn_for_cert.sid as news_sid,
+        cn_for_cert.member_sid,
+        MAX(cc.level) as highest_level_at_submission
+    FROM EcoCampus_Maria3.dbo.custom_news cn_for_cert
+    INNER JOIN EcoCampus_Maria3.dbo.custom_certification cc ON cn_for_cert.member_sid = cc.member_sid
+    WHERE cn_for_cert.type = N'release' 
+      AND cn_for_cert.lan = N'zh_tw'
+      AND cc.review = N'通過'
+      AND cc.passdate IS NOT NULL 
+      AND cc.passdate != ''
+      -- 認證通過時間必須在投稿時間之前或同時
+      AND TRY_CONVERT(datetime, cc.passdate) <= CASE 
+          WHEN cn_for_cert.createdate IS NOT NULL AND cn_for_cert.createdate > 0 
+          THEN DATEADD(SECOND, cn_for_cert.createdate, '1970-01-01')
+          ELSE CONVERT(datetime, cn_for_cert.startdate + ' 00:00:00')
+      END
+    GROUP BY cn_for_cert.sid, cn_for_cert.member_sid
+) cert_at_submission ON cert_at_submission.news_sid = cn.sid
+-- 關聯BadgeType映射表
+LEFT JOIN #LevelToBadgeMapping badge_mapping ON badge_mapping.OldLevel = cert_at_submission.highest_level_at_submission
 WHERE cn.lan = 'zh_tw'
   AND cn.type = 'release'  -- 只處理校園投稿
 ORDER BY COALESCE(cn.createdate, 0), cn.sid;
@@ -301,6 +347,13 @@ PRINT 'SchoolId 對應統計:';
 PRINT '- 成功對應到學校: ' + CAST(@MappedSchools AS VARCHAR) + ' 筆';
 PRINT '- 使用預設值(SchoolId=1): ' + CAST(@DefaultSchools AS VARCHAR) + ' 筆';
 
+-- BadgeType 對應統計
+DECLARE @GreenFlagBadges INT = (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime AND BadgeType = 1);
+DECLARE @SilverBadges INT = (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime AND BadgeType = 2);
+PRINT 'BadgeType 分佈統計:';
+PRINT '- 綠旗徽章(ID=1): ' + CAST(@GreenFlagBadges AS VARCHAR) + ' 筆';
+PRINT '- 銀牌徽章(ID=2): ' + CAST(@SilverBadges AS VARCHAR) + ' 筆';
+
 SELECT 
     '校園投稿遷移完成統計' as [遷移項目],
     (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime) as [CampusSubmissions主表],
@@ -317,10 +370,15 @@ SELECT TOP 5
     cs.CampusSubmissionId as [投稿ID],
     cs.SchoolId as [學校ID],
     COALESCE(sc.Name, '未知學校') as [學校名稱],
+    cs.BadgeType as [徽章類型],
+    CASE cs.BadgeType 
+        WHEN 1 THEN '綠旗徽章'
+        WHEN 2 THEN '銀牌徽章'
+        ELSE '未知徽章'
+    END as [徽章名稱],
     cs.SubmissionDate as [投稿日期],
     csc.Title as [標題],
-    LEFT(COALESCE(csc.Description, ''), 30) + '...' as [內容預覽],
-    csc.LocaleCode as [語言],
+    LEFT(COALESCE(csc.Description, ''), 20) + '...' as [內容預覽],
     cs.Status as [狀態]
 FROM CampusSubmissions cs
 INNER JOIN CampusSubmissionContents csc ON cs.CampusSubmissionId = csc.CampusSubmissionId
@@ -339,7 +397,11 @@ PRINT '1. member_sid 對應問題：目前所有 CreatedUserId/UpdatedUserId 都
 PRINT '   需要建立 custom_news.member_sid → 新系統 UserId 的對應表';
 PRINT '2. SchoolId 對應：已透過 member_sid → custom_member.code → Schools.SchoolCode 建立關聯';
 PRINT '   未能對應的投稿項目會使用預設值 SchoolId=1';
-PRINT '3. FileEntry 對應：部分照片可能找不到對應的 FileEntry 記錄';
+PRINT '3. BadgeType 對應：已根據投稿時間當下學校的最高認證等級設定徽章類型';
+PRINT '   - 綠旗等級(3-6) → 綠旗徽章(BadgeType=1)';
+PRINT '   - 銅牌/銀牌等級(1-2) → 銀牌徽章(BadgeType=2)';
+PRINT '   - 無認證或找不到認證 → 預設銀牌徽章(BadgeType=2)';
+PRINT '4. FileEntry 對應：部分照片可能找不到對應的 FileEntry 記錄';
 PRINT '   請檢查 FileEntry 表是否包含所有 custom_release_photo.photo 檔案';
 PRINT '========================================';
 
@@ -354,5 +416,7 @@ PRINT '- 英文內容: ' + CAST(@ContentsEnCount AS VARCHAR) + ' 筆';
 PRINT '- 照片附件: ' + CAST(@AttachmentsCount AS VARCHAR) + ' 筆';
 PRINT '- 成功對應學校: ' + CAST(@MappedSchools AS VARCHAR) + ' 筆';
 PRINT '- 使用預設學校: ' + CAST(@DefaultSchools AS VARCHAR) + ' 筆';
+PRINT '- 綠旗徽章: ' + CAST(@GreenFlagBadges AS VARCHAR) + ' 筆';
+PRINT '- 銀牌徽章: ' + CAST(@SilverBadges AS VARCHAR) + ' 筆';
 PRINT '執行完成時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
