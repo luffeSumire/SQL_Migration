@@ -260,44 +260,55 @@ INSERT INTO #UrlMapping (old_url, new_route, rule_name) VALUES
 ('simple_crud/24', '/certificates/versions', '證書版本列表'),
 ('sys/groups_manage', '/permissions/groups', '權限群組');
 
--- 使用 MERGE 處理權限群組對應 (將舊系統 CRUD 權限拆解為新系統獨立權限)
+-- 先為每個權限群組建立完整的權限對應記錄（所有權限都有開關描述）
 MERGE permission_group_map AS target
 USING (
-    SELECT DISTINCT
-        sgr.groups_sid as groupSid,
+    -- 建立所有群組對所有權限的完整矩陣
+    SELECT 
+        pg.sid as groupSid,
         p.sid as permissionSid,
-        CASE 
-            WHEN p.action = 'C' THEN ISNULL(sgr.c, 0)
-            WHEN p.action = 'R' THEN ISNULL(sgr.r, 0)
-            WHEN p.action = 'U' THEN ISNULL(sgr.u, 0)
-            WHEN p.action = 'D' THEN ISNULL(sgr.d, 0)
-            ELSE 0
-        END as allow,
+        0 as allow, -- 預設為拒絕
         GETDATE() as createTime,
         1 as createUser,
         GETDATE() as updateTime,
         1 as updateUser,
         1 as dataStatus
-    FROM [EcoCampus_Maria3].[dbo].[sys_groups_rule] sgr
-    INNER JOIN [EcoCampus_Maria3].[dbo].[sys_rule] sr ON sr.sid = sgr.rule_sid
-    INNER JOIN #UrlMapping um ON um.old_url = sr.url
-    INNER JOIN permission p ON p.route = um.new_route
-    INNER JOIN permission_group pg ON pg.sid = sgr.groups_sid -- 確保群組存在
-    WHERE sgr.groups_sid IS NOT NULL
-      AND sgr.rule_sid IS NOT NULL
-      AND sr.rule_name IS NOT NULL
-      AND sr.url IS NOT NULL
+    FROM permission_group pg
+    CROSS JOIN permission p
+    WHERE pg.sid IS NOT NULL 
+      AND p.sid IS NOT NULL
 ) AS source
 ON target.groupSid = source.groupSid AND target.permissionSid = source.permissionSid
-WHEN MATCHED THEN
-    UPDATE SET
-        allow = source.allow,
-        updateTime = source.updateTime,
-        updateUser = source.updateUser
 WHEN NOT MATCHED THEN
     INSERT (groupSid, permissionSid, allow, createTime, createUser, updateTime, updateUser, dataStatus)
     VALUES (source.groupSid, source.permissionSid, source.allow, source.createTime, 
             source.createUser, source.updateTime, source.updateUser, source.dataStatus);
+
+PRINT '建立完整權限群組對應矩陣: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
+
+-- 然後根據舊系統的權限設定更新允許的權限
+UPDATE pgm
+SET 
+    allow = CASE 
+        WHEN p.action = 'C' THEN ISNULL(sgr.c, 0)
+        WHEN p.action = 'R' THEN ISNULL(sgr.r, 0)
+        WHEN p.action = 'U' THEN ISNULL(sgr.u, 0)
+        WHEN p.action = 'D' THEN ISNULL(sgr.d, 0)
+        ELSE 0
+    END,
+    updateTime = GETDATE(),
+    updateUser = 1
+FROM permission_group_map pgm
+INNER JOIN permission p ON pgm.permissionSid = p.sid
+INNER JOIN #UrlMapping um ON um.new_route = p.route
+INNER JOIN [EcoCampus_Maria3].[dbo].[sys_rule] sr ON sr.url = um.old_url
+INNER JOIN [EcoCampus_Maria3].[dbo].[sys_groups_rule] sgr ON sgr.rule_sid = sr.sid AND sgr.groups_sid = pgm.groupSid
+WHERE sgr.groups_sid IS NOT NULL
+  AND sgr.rule_sid IS NOT NULL
+  AND sr.rule_name IS NOT NULL
+  AND sr.url IS NOT NULL;
+
+PRINT '根據舊系統權限更新允許設定: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
 
 -- 清理暫存表
 DROP TABLE #UrlMapping;

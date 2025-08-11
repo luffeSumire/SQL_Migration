@@ -487,3 +487,6 @@ ORDER BY Status;
 
 PRINT '=== Account 遷移腳本執行完成 ===';
 GO
+
+-- TODO epa使用者帳號遷移完成後 全部的status = 1 應該要根據 isuse 狀態進行調整
+-- TODO sysadmin 的一些資訊 在新系統上 遺失了 
