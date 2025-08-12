@@ -270,7 +270,7 @@ PRINT '✓ CampusSubmissionContents 英文版遷移完成: ' + CAST(@ContentsEnC
 -- ========================================
 PRINT '步驟 4: 遷移校園投稿照片附件...';
 
--- 直接插入附件，使用 sys_files_store 來建立正確的 FileEntry 對應
+-- 同時為中文和英文版插入附件，使用 sys_files_store 來建立正確的 FileEntry 對應
 INSERT INTO CampusSubmissionAttachments (
     CampusSubmissionContentId,
     FileEntryId,
@@ -296,7 +296,10 @@ SELECT
     END as FileEntryId,
     'image' as ContentTypeCode,
     ROW_NUMBER() OVER (PARTITION BY csc.CampusSubmissionContentId ORDER BY crp.sequence, crp.sid) as SortOrder,
-    COALESCE(crp.description, N'校園投稿照片') as Title,
+    CASE 
+        WHEN csc.LocaleCode = 'zh-TW' THEN COALESCE(crp.description, N'校園投稿照片')
+        ELSE COALESCE(crp.description, N'Campus Submission Photo')
+    END as Title,
     @MigrationStartTime as CreatedTime,
     1 as CreatedUserId, -- TODO: member_sid mapping
     @MigrationStartTime as UpdatedTime,
@@ -313,43 +316,26 @@ INNER JOIN (
 INNER JOIN EcoCampus_Maria3.dbo.custom_release_photo crp ON cn.sid = crp.release_sid
 -- 關聯 sys_files_store 來獲取檔案的 size 和 file_hash
 INNER JOIN EcoCampus_Maria3.dbo.sys_files_store sfs ON crp.photo = sfs.name
-WHERE csc.LocaleCode = 'zh-TW'
-  AND crp.photo IS NOT NULL AND crp.photo != '';
+WHERE crp.photo IS NOT NULL AND crp.photo != ''
+  AND cs.CreatedTime >= DATEADD(SECOND, -5, @MigrationStartTime);
 
-DECLARE @AttachmentsZhCount INT = @@ROWCOUNT;
+DECLARE @AttachmentsCount INT = @@ROWCOUNT;
+
+-- 計算中文和英文附件數量
+DECLARE @AttachmentsZhCount INT = (
+    SELECT COUNT(*) 
+    FROM CampusSubmissionAttachments csa
+    INNER JOIN CampusSubmissionContents csc ON csa.CampusSubmissionContentId = csc.CampusSubmissionContentId
+    WHERE csa.CreatedTime = @MigrationStartTime AND csc.LocaleCode = 'zh-TW'
+);
+DECLARE @AttachmentsEnCount INT = (
+    SELECT COUNT(*) 
+    FROM CampusSubmissionAttachments csa
+    INNER JOIN CampusSubmissionContents csc ON csa.CampusSubmissionContentId = csc.CampusSubmissionContentId
+    WHERE csa.CreatedTime = @MigrationStartTime AND csc.LocaleCode = 'en'
+);
+
 PRINT '✓ 中文附件插入完成: ' + CAST(@AttachmentsZhCount AS VARCHAR) + ' 筆記錄';
-
--- 為英文版複製附件記錄
-INSERT INTO CampusSubmissionAttachments (
-    CampusSubmissionContentId,
-    FileEntryId,
-    ContentTypeCode,
-    SortOrder,
-    Title,
-    CreatedTime,
-    CreatedUserId,
-    UpdatedTime,
-    UpdatedUserId
-)
-SELECT 
-    csc_en.CampusSubmissionContentId,
-    csa.FileEntryId,
-    csa.ContentTypeCode,
-    csa.SortOrder,
-    csa.Title,
-    @MigrationStartTime as CreatedTime,
-    1 as CreatedUserId,
-    @MigrationStartTime as UpdatedTime,
-    1 as UpdatedUserId
-FROM CampusSubmissionAttachments csa
-INNER JOIN CampusSubmissionContents csc_zh ON csa.CampusSubmissionContentId = csc_zh.CampusSubmissionContentId
-INNER JOIN CampusSubmissionContents csc_en ON csc_zh.CampusSubmissionId = csc_en.CampusSubmissionId 
-WHERE csc_zh.LocaleCode = 'zh-TW' 
-  AND csc_en.LocaleCode = 'en'
-  AND csa.CreatedTime = @MigrationStartTime;
-
-DECLARE @AttachmentsEnCount INT = @@ROWCOUNT;
-DECLARE @AttachmentsCount INT = @AttachmentsZhCount + @AttachmentsEnCount;
 PRINT '✓ 英文附件插入完成: ' + CAST(@AttachmentsEnCount AS VARCHAR) + ' 筆記錄';
 PRINT '✓ CampusSubmissionAttachments 總計: ' + CAST(@AttachmentsCount AS VARCHAR) + ' 筆記錄';
 
