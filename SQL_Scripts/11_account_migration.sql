@@ -110,9 +110,9 @@ USING (
             THEN DATEADD(second, cm.updatedate, '1970-01-01 00:00:00')
             ELSE GETDATE()
         END AS UpdatedTime,
-        -- 狀態判斷邏輯
+        -- 狀態判斷邏輯 (基於 isuse 欄位決定帳號啟用狀態)
         CASE 
-            WHEN cm.isuse = 1 AND cm.register_review = '已通過' THEN 1  -- 啟用
+            WHEN cm.isuse = 1 THEN 1  -- 啟用 (基於原系統的 isuse 狀態)
             ELSE 0  -- 停用
         END AS Status,
         -- 軟刪除相關欄位
@@ -486,7 +486,4 @@ GROUP BY Status
 ORDER BY Status;
 
 PRINT '=== Account 遷移腳本執行完成 ===';
-GO
-
--- TODO epa使用者帳號遷移完成後 全部的status = 1 應該要根據 isuse 狀態進行調整
 -- TODO sysadmin 的一些資訊 在新系統上 遺失了 

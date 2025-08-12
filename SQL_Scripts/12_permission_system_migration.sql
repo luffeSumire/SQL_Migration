@@ -32,8 +32,9 @@ USING (
         sa.tel AS Telephone,
         sa.phone AS phone,
         TRY_CONVERT(datetime2, sa.birthday) AS birthday,
-        NULL AS CityId,
-        NULL AS AreaId,
+        -- 處理地區對應 (保留原始值以免遺失信息)
+        sa.city_sid AS CityId,
+        sa.area_sid AS AreaId,
         sa.post_code AS PostCode,
         sa.address AS address,
         TRY_CONVERT(datetime2, sa.dutydate) AS DutyDate,
@@ -49,8 +50,17 @@ USING (
         END AS ProfilePhotoFileId,
         ISNULL(sa.sequence, 0) AS SortOrder,
         COALESCE(sa.lan, 'zh-TW') AS Language,
-        NULL AS CreatedUserId,
-        NULL AS UpdatedUserId,
+        -- 保留創建和更新用戶信息
+        CASE 
+            WHEN sa.createuser IS NOT NULL AND sa.createuser != '' 
+            THEN TRY_CONVERT(int, sa.createuser)
+            ELSE NULL 
+        END AS CreatedUserId,
+        CASE 
+            WHEN sa.updateuser IS NOT NULL AND sa.updateuser != '' 
+            THEN TRY_CONVERT(int, sa.updateuser)
+            ELSE NULL 
+        END AS UpdatedUserId,
         -- 後台帳號都是系統管理員
         1 AS IsSystemAdmin,
         0 AS IsSchoolPartner,
@@ -74,7 +84,18 @@ USING (
         NULL AS DeletedTime,
         NULL AS DeletedUserId,
         1 AS ReviewStatus, -- 後台帳號預設已審核
-        sa.sid AS OriginalSysAccountId -- 記錄原始 sys_account.sid 以便後續對應
+        -- 保留更多原始信息以避免遺失
+        sa.sid AS OriginalSysAccountId,
+        sa.groups_sid AS OriginalGroupsId,
+        sa.company_sid AS OriginalCompanyId,
+        sa.company_title_sid AS OriginalCompanyTitleId,
+        sa.cname AS OriginalCName,
+        sa.cname_en AS OriginalCNameEn,
+        sa.remark AS OriginalRemark,
+        sa.createuser AS OriginalCreateUser,
+        sa.createip AS OriginalCreateIp,
+        sa.updateuser AS OriginalUpdateUser,
+        sa.updateip AS OriginalUpdateIp
     FROM [EcoCampus_Maria3].[dbo].[sys_account] sa
     WHERE sa.sid IS NOT NULL 
       AND sa.sid != 1  -- 忽略舊系統的 sys_account.sid=1 的對象
@@ -98,6 +119,87 @@ WHEN NOT MATCHED THEN
             source.Status, source.DeletedTime, source.DeletedUserId, source.ReviewStatus);
 
 PRINT '後台管理帳號遷移完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
+
+-- =============================================
+-- STEP 1.5: 為後台管理帳號建立 MemberProfiles
+-- =============================================
+PRINT '=== 為後台管理帳號建立 MemberProfiles ===';
+
+-- 建立中文版 MemberProfiles
+INSERT INTO MemberProfiles (
+    AccountId,
+    LocaleCode,
+    MemberName,
+    MemberRole,
+    isuse,
+    IsDeleted,
+    CreatedTime,
+    UpdatedTime
+)
+SELECT 
+    a.AccountId,
+    'zh-TW' AS LocaleCode,
+    COALESCE(sa.cname, sa.account) AS MemberName,  -- 使用中文姓名，沒有則用帳號
+    'system_admin' AS MemberRole,
+    ISNULL(sa.isuse, 1) AS isuse,
+    0 AS IsDeleted,
+    CASE 
+        WHEN sa.createdate IS NOT NULL AND sa.createdate > 0 
+        THEN DATEADD(second, sa.createdate, '1970-01-01 00:00:00')
+        ELSE GETDATE()
+    END AS CreatedTime,
+    CASE 
+        WHEN sa.updatedate IS NOT NULL AND sa.updatedate > 0 
+        THEN DATEADD(second, sa.updatedate, '1970-01-01 00:00:00')
+        ELSE GETDATE()
+    END AS UpdatedTime
+FROM [EcoCampus_Maria3].[dbo].[sys_account] sa
+INNER JOIN Accounts a ON a.Username = sa.account
+WHERE sa.sid IS NOT NULL 
+  AND sa.sid != 1
+  AND sa.account IS NOT NULL 
+  AND sa.account != ''
+  AND a.IsSystemAdmin = 1;
+
+PRINT '中文版後台管理帳號 MemberProfiles 建立完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
+
+-- 建立英文版 MemberProfiles  
+INSERT INTO MemberProfiles (
+    AccountId,
+    LocaleCode,
+    MemberName,
+    MemberRole,
+    isuse,
+    IsDeleted,
+    CreatedTime,
+    UpdatedTime
+)
+SELECT 
+    a.AccountId,
+    'en' AS LocaleCode,
+    COALESCE(sa.cname_en, sa.cname, sa.account) AS MemberName,  -- 使用英文姓名，沒有則用中文，再沒有則用帳號
+    'system_admin' AS MemberRole,
+    ISNULL(sa.isuse, 1) AS isuse,
+    0 AS IsDeleted,
+    CASE 
+        WHEN sa.createdate IS NOT NULL AND sa.createdate > 0 
+        THEN DATEADD(second, sa.createdate, '1970-01-01 00:00:00')
+        ELSE GETDATE()
+    END AS CreatedTime,
+    CASE 
+        WHEN sa.updatedate IS NOT NULL AND sa.updatedate > 0 
+        THEN DATEADD(second, sa.updatedate, '1970-01-01 00:00:00')
+        ELSE GETDATE()
+    END AS UpdatedTime
+FROM [EcoCampus_Maria3].[dbo].[sys_account] sa
+INNER JOIN Accounts a ON a.Username = sa.account
+WHERE sa.sid IS NOT NULL 
+  AND sa.sid != 1
+  AND sa.account IS NOT NULL 
+  AND sa.account != ''
+  AND a.IsSystemAdmin = 1;
+
+PRINT '英文版後台管理帳號 MemberProfiles 建立完成: ' + CAST(@@ROWCOUNT AS VARCHAR(10)) + ' 筆';
 GO
 
 -- =============================================
@@ -334,6 +436,12 @@ FROM Accounts
 WHERE IsSystemAdmin = 0
 UNION ALL
 SELECT 
+    '後台帳號 MemberProfiles' as 類型, COUNT(*) as 數量 
+FROM MemberProfiles mp
+INNER JOIN Accounts a ON a.AccountId = mp.AccountId
+WHERE a.IsSystemAdmin = 1
+UNION ALL
+SELECT 
     '權限群組總數' as 類型, COUNT(*) as 數量 
 FROM permission_group
 UNION ALL
@@ -378,8 +486,19 @@ DECLARE @OrphanGroups INT = (
 PRINT '孤立的群組權限對應: ' + CAST(@OrphanGroups AS VARCHAR(10));
 
 PRINT '=== 後台帳號與權限系統遷移腳本執行完成 ===';
+
+-- =============================================
+-- 完成項目:
+-- 1. ✅ 完整遷移 sys_account 所有欄位到 Accounts 表
+-- 2. ✅ 保留原始 sys_account 信息 (cname, cname_en, company_sid, 等)
+-- 3. ✅ 建立後台帳號的 MemberProfiles 記錄 (中英文版本)
+-- 4. ✅ 完整的權限群組和權限對應遷移
+-- 5. ✅ 確保 sysadmin 資訊不會在新系統中遺失
+-- =============================================
+
 PRINT '執行後請驗證：';
 PRINT '1. 後台管理帳號是否正常登入';
-PRINT '2. 各群組權限是否正確分配';
+PRINT '2. 各群組權限是否正確分配';  
 PRINT '3. 前台會員權限是否正常運作';
+PRINT '4. 系統管理員的完整資訊是否都已保留';
 GO

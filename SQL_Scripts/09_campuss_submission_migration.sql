@@ -27,6 +27,23 @@ END
 PRINT '✓ 前置檢查通過：Schools 表包含 ' + CAST(@SchoolCount AS VARCHAR) + ' 筆學校資料';
 
 -- ========================================
+-- 初始化：新增銅牌勳章類型 (用於存放銅牌的校園投稿)
+-- ========================================
+PRINT '初始化：新增銅牌勳章類型...';
+
+-- 檢查是否已存在銅牌勳章類型
+IF NOT EXISTS (SELECT 1 FROM BadgeTypes WHERE BadgeCode = N'bronze_badge')
+BEGIN
+    INSERT INTO BadgeTypes (BadgeCode, LabelZhTw, LabelEn, SortOrder, IsActive)
+    VALUES (N'bronze_badge', N'銅牌學校', N'Bronze Medal School', 3, 0);
+    PRINT '✓ 銅牌勳章類型已新增 (IsActive = 0)';
+END
+ELSE
+BEGIN
+    PRINT '✓ 銅牌勳章類型已存在，跳過新增';
+END
+
+-- ========================================
 -- 建立認證等級到BadgeType的映射表
 -- ========================================
 -- 創建臨時映射表
@@ -37,9 +54,12 @@ CREATE TABLE #LevelToBadgeMapping (
     Description NVARCHAR(50)
 );
 
--- 插入映射資料 (根據08腳本的邏輯)
+-- 取得銅牌勳章的ID
+DECLARE @BronzeBadgeId INT = (SELECT Id FROM BadgeTypes WHERE BadgeCode = N'bronze_badge');
+
+-- 插入映射資料 (根據08腳本的邏輯，銅牌現在對應到銅牌勳章)
 INSERT INTO #LevelToBadgeMapping (OldLevel, BadgeTypeId, Description) VALUES 
-(1, 2, '銅牌 -> 銀牌徽章'),     -- 銅牌對應銀牌徽章
+(1, @BronzeBadgeId, '銅牌 -> 銅牌勳章'),     -- 銅牌對應銅牌勳章
 (2, 2, '銀牌 -> 銀牌徽章'),     -- 銀牌對應銀牌徽章  
 (3, 1, '綠旗 -> 綠旗徽章'),     -- 綠旗對應綠旗徽章
 (4, 1, '綠旗R1 -> 綠旗徽章'),   -- 綠旗R1對應綠旗徽章
@@ -350,9 +370,11 @@ PRINT '- 使用預設值(SchoolId=1): ' + CAST(@DefaultSchools AS VARCHAR) + ' �
 -- BadgeType 對應統計
 DECLARE @GreenFlagBadges INT = (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime AND BadgeType = 1);
 DECLARE @SilverBadges INT = (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime AND BadgeType = 2);
+DECLARE @BronzeBadges INT = (SELECT COUNT(*) FROM CampusSubmissions WHERE CreatedTime = @MigrationStartTime AND BadgeType = @BronzeBadgeId);
 PRINT 'BadgeType 分佈統計:';
 PRINT '- 綠旗徽章(ID=1): ' + CAST(@GreenFlagBadges AS VARCHAR) + ' 筆';
 PRINT '- 銀牌徽章(ID=2): ' + CAST(@SilverBadges AS VARCHAR) + ' 筆';
+PRINT '- 銅牌勳章(ID=' + CAST(@BronzeBadgeId AS VARCHAR) + '): ' + CAST(@BronzeBadges AS VARCHAR) + ' 筆';
 
 SELECT 
     '校園投稿遷移完成統計' as [遷移項目],
@@ -374,6 +396,7 @@ SELECT TOP 5
     CASE cs.BadgeType 
         WHEN 1 THEN '綠旗徽章'
         WHEN 2 THEN '銀牌徽章'
+        WHEN @BronzeBadgeId THEN '銅牌勳章'
         ELSE '未知徽章'
     END as [徽章名稱],
     cs.SubmissionDate as [投稿日期],
@@ -399,7 +422,8 @@ PRINT '2. SchoolId 對應：已透過 member_sid → custom_member.code → Scho
 PRINT '   未能對應的投稿項目會使用預設值 SchoolId=1';
 PRINT '3. BadgeType 對應：已根據投稿時間當下學校的最高認證等級設定徽章類型';
 PRINT '   - 綠旗等級(3-6) → 綠旗徽章(BadgeType=1)';
-PRINT '   - 銅牌/銀牌等級(1-2) → 銀牌徽章(BadgeType=2)';
+PRINT '   - 銅牌等級(1) → 銅牌勳章(BadgeType=' + CAST(@BronzeBadgeId AS VARCHAR) + ', IsActive=0)';
+PRINT '   - 銀牌等級(2) → 銀牌徽章(BadgeType=2)';
 PRINT '   - 無認證或找不到認證 → 預設銀牌徽章(BadgeType=2)';
 PRINT '4. FileEntry 對應：部分照片可能找不到對應的 FileEntry 記錄';
 PRINT '   請檢查 FileEntry 表是否包含所有 custom_release_photo.photo 檔案';
@@ -418,5 +442,6 @@ PRINT '- 成功對應學校: ' + CAST(@MappedSchools AS VARCHAR) + ' 筆';
 PRINT '- 使用預設學校: ' + CAST(@DefaultSchools AS VARCHAR) + ' 筆';
 PRINT '- 綠旗徽章: ' + CAST(@GreenFlagBadges AS VARCHAR) + ' 筆';
 PRINT '- 銀牌徽章: ' + CAST(@SilverBadges AS VARCHAR) + ' 筆';
+PRINT '- 銅牌勳章: ' + CAST(@BronzeBadges AS VARCHAR) + ' 筆';
 PRINT '執行完成時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
