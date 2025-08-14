@@ -97,7 +97,32 @@ USING (
             WHEN cm.tag_sid = 12 THEN 1  -- 輔導人員 (custom_tag.sid=12 -> GuidanceTagId=1)  
             ELSE NULL
         END AS GuidanceTagId,
-        NULL AS CountyId,  -- 需要進一步分析縣市對應關係
+        -- CountyId 映射：從 custom_member.city_sid 對應到 Counties.CountyId
+        CASE cm.city_sid
+            WHEN 1 THEN 2    -- 基隆市 -> Keelung City
+            WHEN 9 THEN 1    -- 台北市 -> Taipei City  
+            WHEN 22 THEN 3   -- 新北市 -> New Taipei City
+            WHEN 52 THEN 8   -- 桃園市 -> Taoyuan County (名稱略有差異)
+            WHEN 66 THEN 6   -- 新竹市 -> Hsinchu City
+            WHEN 70 THEN 7   -- 新竹縣 -> Hsinchu County
+            WHEN 84 THEN 9   -- 苗栗縣 -> Miaoli County
+            WHEN 103 THEN 10 -- 台中市 -> Taichung City
+            WHEN 133 THEN 11 -- 彰化縣 -> Changhua County
+            WHEN 160 THEN 12 -- 南投縣 -> Nantou County
+            WHEN 174 THEN 15 -- 雲林縣 -> Yunlin County
+            WHEN 195 THEN 13 -- 嘉義市 -> Chiayi City
+            WHEN 198 THEN 14 -- 嘉義縣 -> Chiayi County
+            WHEN 217 THEN 16 -- 台南市 -> Tainan City
+            WHEN 255 THEN 17 -- 高雄市 -> Kaohsiung City
+            WHEN 296 THEN 20 -- 屏東縣 -> Pingtung County
+            WHEN 330 THEN 21 -- 台東縣 -> Taitung County
+            WHEN 347 THEN 22 -- 花蓮縣 -> Hualien County
+            WHEN 361 THEN 5  -- 宜蘭縣 -> Yilan County
+            WHEN 375 THEN 18 -- 澎湖縣 -> Penghu County
+            WHEN 382 THEN 19 -- 金門縣 -> Kinmen County
+            WHEN 389 THEN 4  -- 連江縣 -> Lienchiang County
+            ELSE NULL
+        END AS CountyId,
         NULL AS GovernmentUnitId,  -- 需要進一步分析政府單位對應關係
         -- 時間戳轉換 (Unix timestamp to datetime2)
         CASE 
