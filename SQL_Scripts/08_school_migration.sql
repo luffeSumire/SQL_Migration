@@ -516,6 +516,240 @@ SET @EnvPathStatusesInserted = @@ROWCOUNT;
 PRINT '✓ SchoolEnvironmentalPathStatuses 插入完成: ' + CAST(@EnvPathStatusesInserted AS VARCHAR) + ' 筆';
 
 -- ========================================
+-- 第八部分：遷移校長資料
+-- ========================================
+
+PRINT '步驟 8: 遷移校長資料到 SchoolPrincipals 表...';
+
+DECLARE @PrincipalsInserted INT = 0;
+
+-- 啟用 IDENTITY_INSERT 以插入明確的 Id 值
+SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolPrincipals] ON;
+
+-- 將校長資料插入SchoolPrincipals表
+INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolPrincipals]
+(
+    [Id],                                -- 使用原系統的ID
+    [SchoolId],                          -- 學校ID
+    [PrincipalName],                     -- 校長姓名
+    [PrincipalPhone],                    -- 校長電話
+    [PrincipalMobile],                   -- 校長手機
+    [PrincipalEmail],                    -- 校長Email
+    [CreatedTime],                       -- 建立時間
+    [CreatedUserId],                     -- 建立者ID
+    [UpdatedTime],                       -- 更新時間
+    [UpdatedUserId],                     -- 更新者ID
+    [Status]                            -- 狀態
+)
+SELECT 
+    csp.sid AS Id,                       -- 使用原系統ID
+    s.Id AS SchoolId,                    -- 關聯到Schools表的ID
+    COALESCE(csp.principal_cname, '') AS PrincipalName, -- 校長中文姓名（優先）或英文姓名
+    csp.principal_tel AS PrincipalPhone, -- 校長電話
+    csp.principal_phone AS PrincipalMobile, -- 校長手機
+    csp.principal_email AS PrincipalEmail, -- 校長Email
+    -- 時間戳轉換 (Unix timestamp to datetime2)
+    CASE 
+        WHEN csp.createdate IS NOT NULL AND csp.createdate > 0 
+        THEN DATEADD(second, csp.createdate, '1970-01-01 00:00:00')
+        ELSE SYSUTCDATETIME()
+    END AS CreatedTime,
+    1 AS CreatedUserId,                  -- 建立者ID（預設為1）
+    CASE 
+        WHEN csp.updatedate IS NOT NULL AND csp.updatedate > 0 
+        THEN DATEADD(second, csp.updatedate, '1970-01-01 00:00:00')
+        ELSE SYSUTCDATETIME()
+    END AS UpdatedTime,
+    1 AS UpdatedUserId,                  -- 更新者ID（預設為1）
+    1 AS Status                          -- 狀態（預設啟用）
+FROM [EcoCampus_Maria3].[dbo].[custom_school_principal] csp
+INNER JOIN [EcoCampus_Maria3].[dbo].[custom_member] cm ON csp.member_sid = cm.sid
+INNER JOIN [Ecocampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
+    WHEN cm.sid = 812 THEN '193665'      -- 特殊對應規則：市立大崗國小
+    WHEN cm.sid = 603 THEN '034639'      -- 特殊對應規則：私立惠明盲校
+    WHEN cm.sid = 796 THEN '061F01'      -- 特殊對應規則：臺中市北屯區廍子國民小學
+    ELSE cm.code 
+END
+LEFT JOIN [Ecocampus_PreProduction].[dbo].[SchoolPrincipals] existing_sp ON existing_sp.Id = csp.sid
+WHERE csp.sid IS NOT NULL
+    AND cm.member_role = 'school'        -- 確保是學校類型
+    AND csp.principal_cname IS NOT NULL  -- 確保有校長姓名
+    AND LTRIM(RTRIM(csp.principal_cname)) != N''
+    AND existing_sp.Id IS NULL;          -- 避免重複插入
+
+SET @PrincipalsInserted = @@ROWCOUNT;
+
+-- 關閉 IDENTITY_INSERT
+SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolPrincipals] OFF;
+
+PRINT '✓ SchoolPrincipals 插入完成: ' + CAST(@PrincipalsInserted AS VARCHAR) + ' 筆';
+
+-- ========================================
+-- 第九部分：遷移學校統計資料
+-- ========================================
+
+PRINT '步驟 9: 遷移學校統計資料到 SchoolStatistics 表...';
+
+DECLARE @StatisticsInserted INT = 0;
+
+-- 啟用 IDENTITY_INSERT 以插入明確的 Id 值
+SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolStatistics] ON;
+
+-- 將學校統計資料插入SchoolStatistics表
+INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolStatistics]
+(
+    [Id],                                -- 使用原系統的ID
+    [SchoolId],                          -- 學校ID
+    [StaffTotal],                        -- 教職員總數
+    [Elementary1],                       -- 小一學生數
+    [Elementary2],                       -- 小二學生數  
+    [Elementary3],                       -- 小三學生數
+    [Elementary4],                       -- 小四學生數
+    [Elementary5],                       -- 小五學生數
+    [Elementary6],                       -- 小六學生數
+    [Middle7],                           -- 國一學生數
+    [Middle8],                           -- 國二學生數
+    [Middle9],                           -- 國三學生數
+    [High10],                            -- 高一學生數
+    [High11],                            -- 高二學生數
+    [High12],                            -- 高三學生數
+    [WriteDate],                         -- 填寫日期
+    [CreatedTime],                       -- 建立時間
+    [CreatedUserId],                     -- 建立者ID
+    [UpdatedTime],                       -- 更新時間
+    [UpdatedUserId],                     -- 更新者ID
+    [Status]                            -- 狀態
+)
+SELECT 
+    css.sid AS Id,                       -- 使用原系統ID
+    s.Id AS SchoolId,                    -- 關聯到Schools表的ID
+    css.staff_total AS StaffTotal,       -- 教職員總數
+    css.elementary1 AS Elementary1,      -- 小一學生數
+    css.elementary2 AS Elementary2,      -- 小二學生數
+    css.elementary3 AS Elementary3,      -- 小三學生數
+    css.elementary4 AS Elementary4,      -- 小四學生數
+    css.elementary5 AS Elementary5,      -- 小五學生數
+    css.elementary6 AS Elementary6,      -- 小六學生數
+    css.middle7 AS Middle7,              -- 國一學生數
+    css.middle8 AS Middle8,              -- 國二學生數
+    css.middle9 AS Middle9,              -- 國三學生數
+    css.hight10 AS High10,               -- 高一學生數（注意：來源表拼寫為hight10）
+    css.hight11 AS High11,               -- 高二學生數（注意：來源表拼寫為hight11）
+    css.hight12 AS High12,               -- 高三學生數（注意：來源表拼寫為hight12）
+    -- 處理write_date字串轉換為DATE格式
+    CASE 
+        WHEN css.write_date IS NOT NULL AND css.write_date != '' AND LEN(css.write_date) >= 8
+        THEN TRY_CONVERT(DATE, css.write_date)
+        ELSE NULL
+    END AS WriteDate,
+    -- 時間戳轉換 (Unix timestamp to datetime2)
+    CASE 
+        WHEN css.createdate IS NOT NULL AND css.createdate > 0 
+        THEN DATEADD(second, css.createdate, '1970-01-01 00:00:00')
+        ELSE SYSUTCDATETIME()
+    END AS CreatedTime,
+    1 AS CreatedUserId,                  -- 建立者ID（預設為1）
+    CASE 
+        WHEN css.updatedate IS NOT NULL AND css.updatedate > 0 
+        THEN DATEADD(second, css.updatedate, '1970-01-01 00:00:00')
+        ELSE SYSUTCDATETIME()
+    END AS UpdatedTime,
+    1 AS UpdatedUserId,                  -- 更新者ID（預設為1）
+    1 AS Status                          -- 狀態（預設啟用）
+FROM [EcoCampus_Maria3].[dbo].[custom_school_statistics] css
+INNER JOIN [EcoCampus_Maria3].[dbo].[custom_member] cm ON css.member_sid = cm.sid
+INNER JOIN [Ecocampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
+    WHEN cm.sid = 812 THEN '193665'      -- 特殊對應規則：市立大崗國小
+    WHEN cm.sid = 603 THEN '034639'      -- 特殊對應規則：私立惠明盲校
+    WHEN cm.sid = 796 THEN '061F01'      -- 特殊對應規則：臺中市北屯區廍子國民小學
+    ELSE cm.code 
+END
+LEFT JOIN [Ecocampus_PreProduction].[dbo].[SchoolStatistics] existing_ss ON existing_ss.Id = css.sid
+WHERE css.sid IS NOT NULL
+    AND cm.member_role = 'school'        -- 確保是學校類型
+    AND existing_ss.Id IS NULL;          -- 避免重複插入
+
+SET @StatisticsInserted = @@ROWCOUNT;
+
+-- 關閉 IDENTITY_INSERT
+SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolStatistics] OFF;
+
+PRINT '✓ SchoolStatistics 插入完成: ' + CAST(@StatisticsInserted AS VARCHAR) + ' 筆';
+
+-- ========================================
+-- 第十部分：遷移學校聯絡人資料
+-- ========================================
+
+PRINT '步驟 10: 遷移學校聯絡人資料到 SchoolContacts 表...';
+
+DECLARE @ContactsInserted INT = 0;
+
+-- 啟用 IDENTITY_INSERT 以插入明確的 Id 值
+SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolContacts] ON;
+
+-- 將學校聯絡人資料插入SchoolContacts表
+INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolContacts]
+(
+    [Id],                                -- 使用原系統的ID
+    [SchoolId],                          -- 學校ID
+    [ContactName],                       -- 聯絡人姓名
+    [JobTitle],                          -- 職稱
+    [ContactPhone],                      -- 聯絡電話
+    [ContactMobile],                     -- 聯絡手機
+    [ContactEmail],                      -- 聯絡Email
+    [SortOrder],                         -- 排序順序
+    [CreatedTime],                       -- 建立時間
+    [CreatedUserId],                     -- 建立者ID
+    [UpdatedTime],                       -- 更新時間
+    [UpdatedUserId],                     -- 更新者ID
+    [Status]                            -- 狀態
+)
+SELECT 
+    cc.sid AS Id,                        -- 使用原系統ID
+    s.Id AS SchoolId,                    -- 關聯到Schools表的ID
+    COALESCE(cc.contact_cname, '') AS ContactName, -- 聯絡人中文姓名（優先）或英文姓名
+    cc.contact_job_cname AS JobTitle,    -- 職稱
+    cc.contact_tel AS ContactPhone,      -- 聯絡電話
+    cc.contact_phone AS ContactMobile,   -- 聯絡手機
+    cc.contact_email AS ContactEmail,    -- 聯絡Email
+    COALESCE(cc.sequence, 0) AS SortOrder, -- 排序順序（預設為0）
+    -- 時間戳轉換 (Unix timestamp to datetime2)
+    CASE 
+        WHEN cc.createdate IS NOT NULL AND cc.createdate > 0 
+        THEN DATEADD(second, cc.createdate, '1970-01-01 00:00:00')
+        ELSE SYSUTCDATETIME()
+    END AS CreatedTime,
+    1 AS CreatedUserId,                  -- 建立者ID（預設為1）
+    CASE 
+        WHEN cc.updatedate IS NOT NULL AND cc.updatedate > 0 
+        THEN DATEADD(second, cc.updatedate, '1970-01-01 00:00:00')
+        ELSE SYSUTCDATETIME()
+    END AS UpdatedTime,
+    1 AS UpdatedUserId,                  -- 更新者ID（預設為1）
+    1 AS Status                          -- 狀態（預設啟用）
+FROM [EcoCampus_Maria3].[dbo].[custom_contact] cc
+INNER JOIN [EcoCampus_Maria3].[dbo].[custom_member] cm ON cc.member_sid = cm.sid
+INNER JOIN [Ecocampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
+    WHEN cm.sid = 812 THEN '193665'      -- 特殊對應規則：市立大崗國小
+    WHEN cm.sid = 603 THEN '034639'      -- 特殊對應規則：私立惠明盲校
+    WHEN cm.sid = 796 THEN '061F01'      -- 特殊對應規則：臺中市北屯區廍子國民小學
+    ELSE cm.code 
+END
+LEFT JOIN [Ecocampus_PreProduction].[dbo].[SchoolContacts] existing_sc ON existing_sc.Id = cc.sid
+WHERE cc.sid IS NOT NULL
+    AND cm.member_role = 'school'        -- 確保是學校類型
+    AND cc.contact_cname IS NOT NULL     -- 確保有聯絡人姓名
+    AND LTRIM(RTRIM(cc.contact_cname)) != N''
+    AND existing_sc.Id IS NULL;          -- 避免重複插入
+
+SET @ContactsInserted = @@ROWCOUNT;
+
+-- 關閉 IDENTITY_INSERT
+SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolContacts] OFF;
+
+PRINT '✓ SchoolContacts 插入完成: ' + CAST(@ContactsInserted AS VARCHAR) + ' 筆';
+
+-- ========================================
 -- 遷移結果統計與範例輸出
 -- ========================================
 PRINT '========================================';
@@ -524,6 +758,9 @@ PRINT ' - Schools: ' + CAST(@SchoolsInserted AS VARCHAR) + ' 筆';
 PRINT ' - SchoolContents: ' + CAST(@SchoolContentsInserted AS VARCHAR) + ' 筆';
 PRINT ' - Certifications: ' + CAST(@CertificationsInserted AS VARCHAR) + ' 筆';
 PRINT ' - SchoolEnvironmentalPathStatuses: ' + CAST(@EnvPathStatusesInserted AS VARCHAR) + ' 筆';
+PRINT ' - SchoolPrincipals: ' + CAST(@PrincipalsInserted AS VARCHAR) + ' 筆';
+PRINT ' - SchoolStatistics: ' + CAST(@StatisticsInserted AS VARCHAR) + ' 筆';
+PRINT ' - SchoolContacts: ' + CAST(@ContactsInserted AS VARCHAR) + ' 筆';
 
 PRINT '遷移結果範例 (前5筆):';
 SELECT TOP 5 
@@ -549,3 +786,6 @@ PRINT '========================================';
 -- 3. 遷移學校多語系內容到SchoolContents表  
 -- 4. 遷移學校認證資料到Certifications表
 -- 5. 遷移學校環境教育路徑狀態到SchoolEnvironmentalPathStatuses表
+-- 6. 遷移學校校長資料到SchoolPrincipals表
+-- 7. 遷移學校統計資料到SchoolStatistics表  
+-- 8. 遷移學校聯絡人資料到SchoolContacts表

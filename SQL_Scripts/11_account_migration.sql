@@ -91,10 +91,10 @@ USING (
         CASE WHEN cm.member_role = 'epa' THEN 1 ELSE 0 END AS IsEpaUser,
         -- 輔導團隊權限
         CASE WHEN cm.member_role = 'tutor' THEN 1 ELSE 0 END AS IsGuidanceTeam,
-        -- 處理 GuidanceTagId 外鍵約束，只保留存在的值
+        -- 處理 GuidanceTagId 外鍵約束，根據 custom_tag.sid 映射到正確的 GuidanceTagId
         CASE 
-            WHEN cm.tag_sid IS NOT NULL AND EXISTS (SELECT 1 FROM GuidanceTags gt WHERE gt.GuidanceTagId = cm.tag_sid)
-            THEN cm.tag_sid
+            WHEN cm.tag_sid = 11 THEN 2  -- 諮詢顧問 (custom_tag.sid=11 -> GuidanceTagId=2)
+            WHEN cm.tag_sid = 12 THEN 1  -- 輔導人員 (custom_tag.sid=12 -> GuidanceTagId=1)  
             ELSE NULL
         END AS GuidanceTagId,
         NULL AS CountyId,  -- 需要進一步分析縣市對應關係
@@ -259,10 +259,10 @@ SELECT
     cm.member_role AS MemberRole,
     cm.member_exchange AS MemberExchange,
     cm.member_url AS MemberUrl,
-    -- 處理 TagId 外鍵約束，只保留存在的值
+    -- 處理 TagId 外鍵約束，根據 custom_tag.sid 映射到正確的 GuidanceTagId
     CASE 
-        WHEN cm.tag_sid IS NOT NULL AND EXISTS (SELECT 1 FROM GuidanceTags gt WHERE gt.GuidanceTagId = cm.tag_sid)
-        THEN cm.tag_sid
+        WHEN cm.tag_sid = 11 THEN 2  -- 諮詢顧問 (custom_tag.sid=11 -> GuidanceTagId=2)
+        WHEN cm.tag_sid = 12 THEN 1  -- 輔導人員 (custom_tag.sid=12 -> GuidanceTagId=1)
         ELSE NULL
     END AS TagId,
     cm.isuse AS isuse,
@@ -367,10 +367,10 @@ SELECT
     cm.member_role AS MemberRole,
     cm.member_exchange AS MemberExchange,
     cm.member_url AS MemberUrl,
-    -- 處理 TagId 外鍵約束，只保留存在的值
+    -- 處理 TagId 外鍵約束，根據 custom_tag.sid 映射到正確的 GuidanceTagId
     CASE 
-        WHEN cm.tag_sid IS NOT NULL AND EXISTS (SELECT 1 FROM GuidanceTags gt WHERE gt.GuidanceTagId = cm.tag_sid)
-        THEN cm.tag_sid
+        WHEN cm.tag_sid = 11 THEN 2  -- 諮詢顧問 (custom_tag.sid=11 -> GuidanceTagId=2)
+        WHEN cm.tag_sid = 12 THEN 1  -- 輔導人員 (custom_tag.sid=12 -> GuidanceTagId=1)
         ELSE NULL
     END AS TagId,
     cm.isuse AS isuse,
