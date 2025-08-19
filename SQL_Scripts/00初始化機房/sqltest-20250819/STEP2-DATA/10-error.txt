@@ -1,0 +1,102 @@
+========================================
+學校資料遷移腳本開始執行
+執行時間: 2025-08-19 17:53:09
+========================================
+步驟 0: 清除 Schools 相關資料表...
+
+(1 個資料列受到影響)
+? 已清空 Accounts.SchoolId 筆數: 1
+
+(0 個資料列受到影響)
+ - 已刪除 CampusSubmissions: 0
+
+(0 個資料列受到影響)
+ - 已刪除 SchoolStatistics: 0
+
+(0 個資料列受到影響)
+ - 已刪除 SchoolPrincipals: 0
+
+(0 個資料列受到影響)
+ - 已刪除 SchoolEnvironmentalPathStatuses: 0
+
+(0 個資料列受到影響)
+ - 已刪除 SchoolContacts: 0
+
+(0 個資料列受到影響)
+ - 已刪除 SchoolContents: 0
+
+(0 個資料列受到影響)
+ - 已刪除 Certifications: 0
+
+(0 個資料列受到影響)
+ - 已刪除 Schools: 0
+訊息 3701，層級 11，狀態 5，行 50
+無法 卸除 資料表 '#SchoolData'，原因是它不存在或您沒有權限。
+訊息 3701，層級 11，狀態 5，行 92
+無法 卸除 資料表 '#ReviewStatusMapping'，原因是它不存在或您沒有權限。
+
+(5 個資料列受到影響)
+訊息 3701，層級 11，狀態 5，行 110
+無法 卸除 資料表 '#EnviromentMapping'，原因是它不存在或您沒有權限。
+
+(12 個資料列受到影響)
+訊息 3701，層級 11，狀態 5，行 136
+無法 卸除 資料表 '#SchoolTypeMapping'，原因是它不存在或您沒有權限。
+
+(5 個資料列受到影響)
+訊息 3701，層級 11，狀態 5，行 154
+無法 卸除 資料表 '#CertificationLevelMapping'，原因是它不存在或您沒有權限。
+
+(6 個資料列受到影響)
+
+(1825 個資料列受到影響)
+
+(2 個資料列受到影響)
+
+(1 個資料列受到影響)
+
+(1 個資料列受到影響)
+
+(816 個資料列受到影響)
+? Schools 插入完成: 816 筆
+
+(1632 個資料列受到影響)
+? SchoolContents 插入完成: 1632 筆
+
+(1048 個資料列受到影響)
+? Certifications 插入完成: 1048 筆
+
+(6120 個資料列受到影響)
+? SchoolEnvironmentalPathStatuses 插入完成: 6120 筆
+步驟 8: 遷移校長資料到 SchoolPrincipals 表...
+訊息 2627，層級 14，狀態 1，行 530
+違反 PRIMARY KEY 條件約束 'PK__SchoolPr__3214EC07E6A1EC97'。無法在物件 'dbo.SchoolPrincipals' 中插入重複的索引鍵。重複的索引鍵值是 (860)。
+陳述式已經結束。
+? SchoolPrincipals 插入完成: 0 筆
+步驟 9: 遷移學校統計資料到 SchoolStatistics 表...
+訊息 2627，層級 14，狀態 1，行 599
+違反 PRIMARY KEY 條件約束 'PK__SchoolSt__3214EC07F458203A'。無法在物件 'dbo.SchoolStatistics' 中插入重複的索引鍵。重複的索引鍵值是 (859)。
+陳述式已經結束。
+? SchoolStatistics 插入完成: 0 筆
+步驟 10: 遷移學校聯絡人資料到 SchoolContacts 表...
+訊息 2627，層級 14，狀態 1，行 691
+違反 PRIMARY KEY 條件約束 'PK__SchoolCo__3214EC0788CD463B'。無法在物件 'dbo.SchoolContacts' 中插入重複的索引鍵。重複的索引鍵值是 (922)。
+陳述式已經結束。
+? SchoolContacts 插入完成: 0 筆
+========================================
+學校資料遷移結果統計:
+ - Schools: 816 筆
+ - SchoolContents: 1632 筆
+ - Certifications: 1048 筆
+ - SchoolEnvironmentalPathStatuses: 6120 筆
+ - SchoolPrincipals: 0 筆
+ - SchoolStatistics: 0 筆
+ - SchoolContacts: 0 筆
+遷移結果範例 (前5筆):
+
+(5 個資料列受到影響)
+? 學校資料遷移腳本執行完成！
+執行完成時間: 2025-08-19 17:53:09
+========================================
+
+完成時間: 2025-08-19T17:53:10.0693245+08:00
