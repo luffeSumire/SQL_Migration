@@ -85,7 +85,8 @@ CREATE TABLE #SchoolData (
 	[IsExchangeSchool] BIT,                  -- 是否為交換學校
 	[IsInternalTest] BIT,                    -- 是否為內部測試學校
 	[IsDeleted] BIT,                         -- 是否刪除 (is_del)
-	[IsUse] BIT                              -- 是否使用 (is_use)
+	[IsUse] BIT,                             -- 是否使用 (is_use)
+	[LogoFileName] NVARCHAR(255)             -- 校徽檔案名稱
 )
 
 -- 清除並重建審核狀態對照表
@@ -212,7 +213,8 @@ SELECT
 	CM.[member_exchange], 
 	CM.[is_internal],
 	CM.[is_del],
-	CM.[isuse]
+	CM.[isuse],
+	CM.[member_photo]
 FROM [EcoCampus_Maria3].[dbo].[custom_member] CM
 LEFT JOIN [EcoCampus_Maria3].[dbo].[sys_cityarea] SC1 ON
     SC1.[sid] = CM.[city_sid]
@@ -303,6 +305,7 @@ INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolContents] (
     SchoolId,                            -- 學校ID
     LocaleCode,                          -- 語系代碼（zh-TW或en）
     Name,                                -- 學校名稱
+    LogoFileId,                          -- 校徽檔案ID
     CreatedUserId,                       -- 建立者ID
     UpdatedUserId,                       -- 更新者ID
 	Introduction                         -- 學校介紹
@@ -311,6 +314,7 @@ SELECT
 	D.[SchoolId],                        -- 學校ID
 	D.[LocaleCode],                      -- 語系代碼
 	D.[SchoolNewName],                   -- 學校名稱
+	D.[LogoFileId],                      -- 校徽檔案ID
 	D.[CreatedUserId],                   -- 建立者ID
 	D.[UpdatedUserId],                   -- 更新者ID
     D.[SchoolIntroduction]               -- 學校介紹
@@ -325,6 +329,11 @@ FROM
 		END AS [LocaleCode],
 		UPV.[SchoolNewName],                 -- 轉換後的學校名稱
 		UPV.[SchoolIntroduction],            -- 學校介紹
+		-- Map LogoFileName to FileEntry.Id using FileName
+		(SELECT fe.Id FROM Ecocampus_PreProduction.dbo.FileEntry fe 
+		 WHERE fe.FileName = G2.[LogoFileName] 
+		 AND G2.[LogoFileName] IS NOT NULL 
+		 AND G2.[LogoFileName] != '') AS [LogoFileId], -- 校徽檔案ID
 		1 AS [CreatedUserId],                -- 建立者ID（預設為1）
 		1 AS [UpdatedUserId]                 -- 更新者ID（預設為1）
 	FROM (
@@ -332,7 +341,8 @@ FROM
 			G1.[SchoolCode], 
 			SD2.[SchoolName], 
 			SD2.[SchoolEnName], 
-			SD2.[SchoolIntroduction]
+			SD2.[SchoolIntroduction],
+			SD2.[LogoFileName]
 		FROM (
 			SELECT 
 				MAX([OriginalSchoolId]) AS [LatestOriginalSchoolId], 
@@ -346,13 +356,15 @@ FROM
 				[OriginalSchoolId], 
 				[SchoolName], 
 				[SchoolEnName], 
-				[SchoolIntroduction] 
+				[SchoolIntroduction],
+				[LogoFileName] 
 			FROM #SchoolData 
 			GROUP BY 
 				[OriginalSchoolId], 
 				[SchoolName], 
 				[SchoolEnName], 
-				[SchoolIntroduction]
+				[SchoolIntroduction],
+				[LogoFileName]
 			) SD2 ON
 			SD2.[OriginalSchoolId] = G1.[LatestOriginalSchoolId]
 	) G2
@@ -789,3 +801,5 @@ PRINT '========================================';
 -- 6. 遷移學校校長資料到SchoolPrincipals表
 -- 7. 遷移學校統計資料到SchoolStatistics表  
 -- 8. 遷移學校聯絡人資料到SchoolContacts表
+
+-- ✓ FIXED: Added LogoFileId mapping from custom_member.member_photo -> FileEntry.Id

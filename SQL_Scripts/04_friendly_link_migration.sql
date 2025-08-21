@@ -61,8 +61,8 @@ SELECT
     -- Tag 對應規則 (根據來源的 tag_sid 對應到新系統)
     -- 注意：目標表的類型不可覆蓋，固定為 domestic(1) 和 international(2)
     CASE 
-        WHEN ca.tag_sid = 6 THEN 1    -- 國內友善連結
-        WHEN ca.tag_sid = 5 THEN 2    -- 國外友善連結
+        WHEN ca.tag_sid = 6 THEN 2    -- 國外友善連結 (修正對應)
+        WHEN ca.tag_sid = 5 THEN 1    -- 國內友善連結 (修正對應)
         ELSE 1                        -- 預設為國內友善連結
     END as FriendlyLinkTagId,
     1 as IsActive,                    -- 啟用狀態
@@ -214,10 +214,12 @@ PRINT '========================================';
 PRINT '✅ FriendlyLink 遷移腳本執行完成！';
 PRINT '遷移說明:';
 PRINT '- 來源: custom_article (type=''related'')';
-PRINT '- 目標類型: tag_sid 6=國內, 5=國外';
+PRINT '- 目標類型: tag_sid 5=國內(1), 6=國外(2)';
 PRINT '- 支援中英文雙語版本';
 PRINT '- 保持原始連結和標題';
 PRINT '執行完成時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
 
 GO
+
+-- ✓ FIXED: 國內國外對應已修正 (tag_sid 5->國內(1), tag_sid 6->國外(2))

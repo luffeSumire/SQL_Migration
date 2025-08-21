@@ -143,6 +143,8 @@ INSERT INTO SocialAgencyContents (
     LocaleCode, 
     Title, 
     Introduction, 
+    Assistance,
+    ImageFileId,
     CreatedTime, 
     CreatedUserId
 )
@@ -151,6 +153,10 @@ SELECT
     'zh-TW' as LocaleCode,
     csa.title as Title,
     csa.description as Introduction,
+    csa.support_school_item_list as Assistance,
+    -- Map front_img to FileEntry.Id using FileName
+    (SELECT fe.Id FROM Ecocampus_PreProduction.dbo.FileEntry fe 
+     WHERE fe.FileName = csa.front_img AND csa.front_img IS NOT NULL AND csa.front_img != '') as ImageFileId,
     SYSDATETIME() as CreatedTime,
     1 as CreatedUserId
 FROM EcoCampus_Maria3.dbo.custom_social_agency csa
@@ -170,6 +176,8 @@ INSERT INTO SocialAgencyContents (
     LocaleCode, 
     Title, 
     Introduction, 
+    Assistance,
+    ImageFileId,
     CreatedTime, 
     CreatedUserId
 )
@@ -178,6 +186,10 @@ SELECT
     'en' as LocaleCode,
     csa.title as Title,
     csa.description as Introduction,
+    csa.support_school_item_list as Assistance,
+    -- Map front_img to FileEntry.Id using FileName
+    (SELECT fe.Id FROM Ecocampus_PreProduction.dbo.FileEntry fe 
+     WHERE fe.FileName = csa.front_img AND csa.front_img IS NOT NULL AND csa.front_img != '') as ImageFileId,
     SYSDATETIME() as CreatedTime,
     1 as CreatedUserId
 FROM EcoCampus_Maria3.dbo.custom_social_agency csa
@@ -259,3 +271,5 @@ PRINT '========================================';
 PRINT 'Social Resource Migration Completed!';
 PRINT 'Completion Time: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
+
+-- ✓ FIXED: Added support_school_item_list -> Assistance and front_img -> ImageFileId mapping
