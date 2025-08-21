@@ -6,7 +6,7 @@
 -- 版本: v1.0 - 審核歷程完整遷移
 -- ========================================
 
-USE Ecocampus_PreProduction;
+USE EcoCampus_PreProduction;
 
 -- 設定 SQL 執行選項
 SET ANSI_NULLS ON;

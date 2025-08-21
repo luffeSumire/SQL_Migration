@@ -9,9 +9,9 @@
 -- 環境設定區 (依環境調整以下設定)
 -- ========================================
 -- 目標資料庫設定 (請依環境修改)
--- 測試環境: Ecocampus_PreProduction
+-- 測試環境: EcoCampus_PreProduction
 -- 正式環境: Ecocampus (或其他正式環境名稱)
-USE Ecocampus_PreProduction;
+USE EcoCampus_PreProduction;
 
 -- 來源資料庫設定 (通常固定為舊系統)
 -- DECLARE @SourceDB NVARCHAR(100) = 'EcoCampus_Maria3';

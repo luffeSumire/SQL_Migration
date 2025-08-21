@@ -6,7 +6,7 @@
 -- 版本: Final - 修正所有問題的單一腳本
 -- ========================================
 
-USE Ecocampus_PreProduction;
+USE EcoCampus_PreProduction;
 
 -- 記錄開始時間用於後續篩選
 DECLARE @MigrationStartTime DATETIME2 = SYSDATETIME();

@@ -10,9 +10,9 @@
 -- Environment Configuration
 -- ========================================
 -- Target Database (modify for different environments)
--- Test Environment: Ecocampus_PreProduction
+-- Test Environment: EcoCampus_PreProduction
 -- Production Environment: Ecocampus (or other production database name)
-USE Ecocampus_PreProduction;
+USE EcoCampus_PreProduction;
 
 -- Source Database (usually fixed as legacy system)
 -- DECLARE @SourceDB NVARCHAR(100) = 'EcoCampus_Maria3';
@@ -155,7 +155,7 @@ SELECT
     csa.description as Introduction,
     csa.support_school_item_list as Assistance,
     -- Map front_img to FileEntry.Id using FileName
-    (SELECT fe.Id FROM Ecocampus_PreProduction.dbo.FileEntry fe 
+    (SELECT fe.Id FROM EcoCampus_PreProduction.dbo.FileEntry fe 
      WHERE fe.FileName = csa.front_img AND csa.front_img IS NOT NULL AND csa.front_img != '') as ImageFileId,
     SYSDATETIME() as CreatedTime,
     1 as CreatedUserId
@@ -188,7 +188,7 @@ SELECT
     csa.description as Introduction,
     csa.support_school_item_list as Assistance,
     -- Map front_img to FileEntry.Id using FileName
-    (SELECT fe.Id FROM Ecocampus_PreProduction.dbo.FileEntry fe 
+    (SELECT fe.Id FROM EcoCampus_PreProduction.dbo.FileEntry fe 
      WHERE fe.FileName = csa.front_img AND csa.front_img IS NOT NULL AND csa.front_img != '') as ImageFileId,
     SYSDATETIME() as CreatedTime,
     1 as CreatedUserId

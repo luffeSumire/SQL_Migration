@@ -4,7 +4,7 @@
 -- 此腳本用於將舊系統的學校資料遷移到新系統中
 -- 包含學校基本資料、認證狀態、環境教育路徑等資訊的轉換
 
-USE Ecocampus_PreProduction;
+USE EcoCampus_PreProduction;
 
 DECLARE @MigrationStartTime DATETIME2 = SYSDATETIME();
 PRINT '========================================';
@@ -21,25 +21,25 @@ PRINT '========================================';
 PRINT '步驟 0: 清除 Schools 相關資料表...';
 
 -- 清空accounts表中的schoolid欄位（避免外鍵約束問題）
-UPDATE [Ecocampus_PreProduction].[dbo].[Accounts] SET SchoolId = NULL WHERE SchoolId IS NOT NULL
+UPDATE [EcoCampus_PreProduction].[dbo].[Accounts] SET SchoolId = NULL WHERE SchoolId IS NOT NULL
 PRINT '✓ 已清空 Accounts.SchoolId 筆數: ' + CAST(@@ROWCOUNT AS VARCHAR);
 
 -- 清除所有依賴Schools表的資料表（按依賴順序）
-DELETE FROM [Ecocampus_PreProduction].[dbo].[CampusSubmissions]            -- 校園申請資料
+DELETE FROM [EcoCampus_PreProduction].[dbo].[CampusSubmissions]            -- 校園申請資料
 PRINT ' - 已刪除 CampusSubmissions: ' + CAST(@@ROWCOUNT AS VARCHAR);
-DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolStatistics]             -- 學校統計資料
+DELETE FROM [EcoCampus_PreProduction].[dbo].[SchoolStatistics]             -- 學校統計資料
 PRINT ' - 已刪除 SchoolStatistics: ' + CAST(@@ROWCOUNT AS VARCHAR);
-DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolPrincipals]             -- 學校校長資料
+DELETE FROM [EcoCampus_PreProduction].[dbo].[SchoolPrincipals]             -- 學校校長資料
 PRINT ' - 已刪除 SchoolPrincipals: ' + CAST(@@ROWCOUNT AS VARCHAR);
-DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]  -- 學校環境路徑狀態
+DELETE FROM [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]  -- 學校環境路徑狀態
 PRINT ' - 已刪除 SchoolEnvironmentalPathStatuses: ' + CAST(@@ROWCOUNT AS VARCHAR);
-DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolContacts]               -- 學校聯絡人資料
+DELETE FROM [EcoCampus_PreProduction].[dbo].[SchoolContacts]               -- 學校聯絡人資料
 PRINT ' - 已刪除 SchoolContacts: ' + CAST(@@ROWCOUNT AS VARCHAR);
-DELETE FROM [Ecocampus_PreProduction].[dbo].[SchoolContents]               -- 學校多語系內容
+DELETE FROM [EcoCampus_PreProduction].[dbo].[SchoolContents]               -- 學校多語系內容
 PRINT ' - 已刪除 SchoolContents: ' + CAST(@@ROWCOUNT AS VARCHAR);
-DELETE FROM [Ecocampus_PreProduction].[dbo].[Certifications]               -- 認證資料
+DELETE FROM [EcoCampus_PreProduction].[dbo].[Certifications]               -- 認證資料
 PRINT ' - 已刪除 Certifications: ' + CAST(@@ROWCOUNT AS VARCHAR);
-DELETE FROM [Ecocampus_PreProduction].[dbo].[Schools]                      -- 學校主表（最後清除）
+DELETE FROM [EcoCampus_PreProduction].[dbo].[Schools]                      -- 學校主表（最後清除）
 PRINT ' - 已刪除 Schools: ' + CAST(@@ROWCOUNT AS VARCHAR);
 
 -- ========================================
@@ -301,7 +301,7 @@ PRINT '✓ Schools 插入完成: ' + CAST(@SchoolsInserted AS VARCHAR) + ' 筆';
 -- ========================================
 
 -- 將學校的中英文名稱和介紹插入SchoolContents表
-INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolContents] (
+INSERT INTO [EcoCampus_PreProduction].[dbo].[SchoolContents] (
     SchoolId,                            -- 學校ID
     LocaleCode,                          -- 語系代碼（zh-TW或en）
     Name,                                -- 學校名稱
@@ -329,11 +329,12 @@ FROM
 		END AS [LocaleCode],
 		UPV.[SchoolNewName],                 -- 轉換後的學校名稱
 		UPV.[SchoolIntroduction],            -- 學校介紹
-		-- Map LogoFileName to FileEntry.Id using FileName
-		(SELECT fe.Id FROM Ecocampus_PreProduction.dbo.FileEntry fe 
-		 WHERE fe.FileName = G2.[LogoFileName] 
-		 AND G2.[LogoFileName] IS NOT NULL 
-		 AND G2.[LogoFileName] != '') AS [LogoFileId], -- 校徽檔案ID
+		-- Map LogoFileName to FileEntry.Id using FileName (retrieve from original data)
+		(SELECT TOP 1 fe.Id FROM EcoCampus_PreProduction.dbo.FileEntry fe 
+		 INNER JOIN #SchoolData sd ON fe.FileName = sd.LogoFileName
+		 WHERE UPV.SchoolCode = sd.SchoolCode
+		 AND sd.LogoFileName IS NOT NULL 
+		 AND sd.LogoFileName != '') AS [LogoFileId], -- 校徽檔案ID
 		1 AS [CreatedUserId],                -- 建立者ID（預設為1）
 		1 AS [UpdatedUserId]                 -- 更新者ID（預設為1）
 	FROM (
@@ -389,7 +390,7 @@ PRINT '✓ SchoolContents 插入完成: ' + CAST(@SchoolContentsInserted AS VARC
 -- ========================================
 
 -- 將學校認證資料插入Certifications表
-INSERT INTO [Ecocampus_PreProduction].[dbo].[Certifications]
+INSERT INTO [EcoCampus_PreProduction].[dbo].[Certifications]
 (
 	[SchoolId],                          -- 學校ID
 	[Level],               -- 認證類型ID（改為Level對應新系統的CertificationTypeId）
@@ -420,13 +421,13 @@ SELECT
     1 AS CreatedUserId,                  -- 建立者ID（預設為1）
 	(SD.[CertIsDelete] + 1) % 2 AS [Status]  -- 狀態（將是否刪除轉換為啟用/停用）
 FROM #SchoolData SD                      -- 從學校資料臨時表取得資料
-INNER JOIN [Ecocampus_PreProduction].[dbo].[Schools] S ON  -- 關聯新系統學校表
+INNER JOIN [EcoCampus_PreProduction].[dbo].[Schools] S ON  -- 關聯新系統學校表
 	S.SchoolCode = SD.SchoolCode
 LEFT JOIN #CertificationLevelMapping CLM ON  -- 關聯認證等級對照表
 	CLM.[OldLevel] = SD.[CertLevel]
 LEFT JOIN #ReviewStatusMapping RSM ON    -- 關聯審核狀態對照表
 	RSM.[Text] = SD.[CertReviewText]
-LEFT JOIN [Ecocampus_PreProduction].[dbo].[Certifications] SC ON  -- 檢查是否已存在相同認證
+LEFT JOIN [EcoCampus_PreProduction].[dbo].[Certifications] SC ON  -- 檢查是否已存在相同認證
 	SC.SchoolId = S.Id AND
 	SC.LEVEL = CLM.[NewCertificationTypeId] AND
 	SC.[ReviewStatus] = RSM.[Status]
@@ -455,7 +456,7 @@ PRINT '✓ Certifications 插入完成: ' + CAST(@CertificationsInserted AS VARC
 -- ========================================
 
 -- 將學校的環境教育路徑遵循狀態插入SchoolEnvironmentalPathStatuses表
-INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]
+INSERT INTO [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]
 (
 	[SchoolId],                          -- 學校ID
 	[EnvironmentalPathId],               -- 環境路徑ID
@@ -513,11 +514,11 @@ FROM
 		)
 	) UPV
 ) E
-INNER JOIN [Ecocampus_PreProduction].[dbo].[Schools] S       -- 關聯新系統學校表
+INNER JOIN [EcoCampus_PreProduction].[dbo].[Schools] S       -- 關聯新系統學校表
 	ON S.SchoolCode = E.SchoolCode
 LEFT JOIN #EnviromentMapping EM                             -- 關聯環境路徑對照表
 	ON EM.[Text] = E.[PathName]
-LEFT JOIN [Ecocampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses] SEPS  -- 檢查是否已存在
+LEFT JOIN [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses] SEPS  -- 檢查是否已存在
 	ON SEPS.SchoolId = S.Id AND SEPS.EnvironmentalPathId = EM.EnvId
 WHERE 
     SEPS.SchoolId IS NULL                                   -- 只插入不存在的記錄
@@ -536,10 +537,10 @@ PRINT '步驟 8: 遷移校長資料到 SchoolPrincipals 表...';
 DECLARE @PrincipalsInserted INT = 0;
 
 -- 啟用 IDENTITY_INSERT 以插入明確的 Id 值
-SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolPrincipals] ON;
+SET IDENTITY_INSERT [EcoCampus_PreProduction].[dbo].[SchoolPrincipals] ON;
 
 -- 將校長資料插入SchoolPrincipals表
-INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolPrincipals]
+INSERT INTO [EcoCampus_PreProduction].[dbo].[SchoolPrincipals]
 (
     [Id],                                -- 使用原系統的ID
     [SchoolId],                          -- 學校ID
@@ -576,13 +577,13 @@ SELECT
     1 AS Status                          -- 狀態（預設啟用）
 FROM [EcoCampus_Maria3].[dbo].[custom_school_principal] csp
 INNER JOIN [EcoCampus_Maria3].[dbo].[custom_member] cm ON csp.member_sid = cm.sid
-INNER JOIN [Ecocampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
+INNER JOIN [EcoCampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
     WHEN cm.sid = 812 THEN '193665'      -- 特殊對應規則：市立大崗國小
     WHEN cm.sid = 603 THEN '034639'      -- 特殊對應規則：私立惠明盲校
     WHEN cm.sid = 796 THEN '061F01'      -- 特殊對應規則：臺中市北屯區廍子國民小學
     ELSE cm.code 
 END
-LEFT JOIN [Ecocampus_PreProduction].[dbo].[SchoolPrincipals] existing_sp ON existing_sp.Id = csp.sid
+LEFT JOIN [EcoCampus_PreProduction].[dbo].[SchoolPrincipals] existing_sp ON existing_sp.Id = csp.sid
 WHERE csp.sid IS NOT NULL
     AND cm.member_role = 'school'        -- 確保是學校類型
     AND csp.principal_cname IS NOT NULL  -- 確保有校長姓名
@@ -592,7 +593,7 @@ WHERE csp.sid IS NOT NULL
 SET @PrincipalsInserted = @@ROWCOUNT;
 
 -- 關閉 IDENTITY_INSERT
-SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolPrincipals] OFF;
+SET IDENTITY_INSERT [EcoCampus_PreProduction].[dbo].[SchoolPrincipals] OFF;
 
 PRINT '✓ SchoolPrincipals 插入完成: ' + CAST(@PrincipalsInserted AS VARCHAR) + ' 筆';
 
@@ -605,10 +606,10 @@ PRINT '步驟 9: 遷移學校統計資料到 SchoolStatistics 表...';
 DECLARE @StatisticsInserted INT = 0;
 
 -- 啟用 IDENTITY_INSERT 以插入明確的 Id 值
-SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolStatistics] ON;
+SET IDENTITY_INSERT [EcoCampus_PreProduction].[dbo].[SchoolStatistics] ON;
 
 -- 將學校統計資料插入SchoolStatistics表
-INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolStatistics]
+INSERT INTO [EcoCampus_PreProduction].[dbo].[SchoolStatistics]
 (
     [Id],                                -- 使用原系統的ID
     [SchoolId],                          -- 學校ID
@@ -670,13 +671,13 @@ SELECT
     1 AS Status                          -- 狀態（預設啟用）
 FROM [EcoCampus_Maria3].[dbo].[custom_school_statistics] css
 INNER JOIN [EcoCampus_Maria3].[dbo].[custom_member] cm ON css.member_sid = cm.sid
-INNER JOIN [Ecocampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
+INNER JOIN [EcoCampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
     WHEN cm.sid = 812 THEN '193665'      -- 特殊對應規則：市立大崗國小
     WHEN cm.sid = 603 THEN '034639'      -- 特殊對應規則：私立惠明盲校
     WHEN cm.sid = 796 THEN '061F01'      -- 特殊對應規則：臺中市北屯區廍子國民小學
     ELSE cm.code 
 END
-LEFT JOIN [Ecocampus_PreProduction].[dbo].[SchoolStatistics] existing_ss ON existing_ss.Id = css.sid
+LEFT JOIN [EcoCampus_PreProduction].[dbo].[SchoolStatistics] existing_ss ON existing_ss.Id = css.sid
 WHERE css.sid IS NOT NULL
     AND cm.member_role = 'school'        -- 確保是學校類型
     AND existing_ss.Id IS NULL;          -- 避免重複插入
@@ -684,7 +685,7 @@ WHERE css.sid IS NOT NULL
 SET @StatisticsInserted = @@ROWCOUNT;
 
 -- 關閉 IDENTITY_INSERT
-SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolStatistics] OFF;
+SET IDENTITY_INSERT [EcoCampus_PreProduction].[dbo].[SchoolStatistics] OFF;
 
 PRINT '✓ SchoolStatistics 插入完成: ' + CAST(@StatisticsInserted AS VARCHAR) + ' 筆';
 
@@ -697,10 +698,10 @@ PRINT '步驟 10: 遷移學校聯絡人資料到 SchoolContacts 表...';
 DECLARE @ContactsInserted INT = 0;
 
 -- 啟用 IDENTITY_INSERT 以插入明確的 Id 值
-SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolContacts] ON;
+SET IDENTITY_INSERT [EcoCampus_PreProduction].[dbo].[SchoolContacts] ON;
 
 -- 將學校聯絡人資料插入SchoolContacts表
-INSERT INTO [Ecocampus_PreProduction].[dbo].[SchoolContacts]
+INSERT INTO [EcoCampus_PreProduction].[dbo].[SchoolContacts]
 (
     [Id],                                -- 使用原系統的ID
     [SchoolId],                          -- 學校ID
@@ -741,13 +742,13 @@ SELECT
     1 AS Status                          -- 狀態（預設啟用）
 FROM [EcoCampus_Maria3].[dbo].[custom_contact] cc
 INNER JOIN [EcoCampus_Maria3].[dbo].[custom_member] cm ON cc.member_sid = cm.sid
-INNER JOIN [Ecocampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
+INNER JOIN [EcoCampus_PreProduction].[dbo].[Schools] s ON s.SchoolCode = CASE 
     WHEN cm.sid = 812 THEN '193665'      -- 特殊對應規則：市立大崗國小
     WHEN cm.sid = 603 THEN '034639'      -- 特殊對應規則：私立惠明盲校
     WHEN cm.sid = 796 THEN '061F01'      -- 特殊對應規則：臺中市北屯區廍子國民小學
     ELSE cm.code 
 END
-LEFT JOIN [Ecocampus_PreProduction].[dbo].[SchoolContacts] existing_sc ON existing_sc.Id = cc.sid
+LEFT JOIN [EcoCampus_PreProduction].[dbo].[SchoolContacts] existing_sc ON existing_sc.Id = cc.sid
 WHERE cc.sid IS NOT NULL
     AND cm.member_role = 'school'        -- 確保是學校類型
     AND cc.contact_cname IS NOT NULL     -- 確保有聯絡人姓名
@@ -757,7 +758,7 @@ WHERE cc.sid IS NOT NULL
 SET @ContactsInserted = @@ROWCOUNT;
 
 -- 關閉 IDENTITY_INSERT
-SET IDENTITY_INSERT [Ecocampus_PreProduction].[dbo].[SchoolContacts] OFF;
+SET IDENTITY_INSERT [EcoCampus_PreProduction].[dbo].[SchoolContacts] OFF;
 
 PRINT '✓ SchoolContacts 插入完成: ' + CAST(@ContactsInserted AS VARCHAR) + ' 筆';
 

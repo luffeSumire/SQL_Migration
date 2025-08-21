@@ -5,7 +5,7 @@
 -- Created: 2025-08-05
 -- ========================================
 
-USE Ecocampus_PreProduction;
+USE EcoCampus_PreProduction;
 GO
 
 PRINT '========================================';

@@ -6,7 +6,7 @@
 -- 版本: v1.0 - 完整遷移腳本
 -- ========================================
 
-USE Ecocampus_PreProduction;
+USE EcoCampus_PreProduction;
 
 -- 記錄開始時間用於後續篩選
 DECLARE @MigrationStartTime DATETIME2 = SYSDATETIME();
@@ -136,7 +136,7 @@ SELECT
     CASE WHEN cn.is_show = 1 THEN 1 ELSE 0 END as Status,
     COALESCE(cn.sequence, 0) as SortOrder,
     -- 透過 member_sid 對應到學校ID，使用與11.5腳本相同的邏輯
-    COALESCE(s.Id, 786) as SchoolId -- 若找不到對應學校則預設為第一個有效的學校ID
+    COALESCE(s.Id, 1) as SchoolId -- 若找不到對應學校則預設為第一個有效的學校ID (修正: 786→1)
 FROM EcoCampus_Maria3.dbo.custom_news cn
 -- 關聯 custom_member 取得學校代碼
 LEFT JOIN EcoCampus_Maria3.dbo.custom_member cm ON cn.member_sid = cm.sid AND cm.member_role = 'school'
