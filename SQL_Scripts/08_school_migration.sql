@@ -47,7 +47,7 @@ PRINT ' - 已刪除 Schools: ' + CAST(@@ROWCOUNT AS VARCHAR);
 -- ========================================
 
 -- 清除並重建學校資料臨時表
-DROP TABLE #SchoolData 
+IF OBJECT_ID('tempdb..#SchoolData') IS NOT NULL DROP TABLE #SchoolData
 GO
 
 -- 建立學校主要資料的臨時表，用於存放從舊系統提取的學校資訊
@@ -90,7 +90,7 @@ CREATE TABLE #SchoolData (
 )
 
 -- 清除並重建審核狀態對照表
-DROP TABLE #ReviewStatusMapping
+IF OBJECT_ID('tempdb..#ReviewStatusMapping') IS NOT NULL DROP TABLE #ReviewStatusMapping
 GO
 
 -- 建立審核狀態對照表，用於轉換審核狀態文字為數字代碼
@@ -108,7 +108,7 @@ INSERT INTO #ReviewStatusMapping ([Status], [Text]) VALUES
 (4, '尚未審核')                          -- 4: 尚未審核
 
 -- 清除並重建環境教育路徑對照表
-DROP TABLE #EnviromentMapping
+IF OBJECT_ID('tempdb..#EnviromentMapping') IS NOT NULL DROP TABLE #EnviromentMapping
 GO
 
 -- 建立環境教育路徑對照表，用於轉換路徑名稱為ID
@@ -134,7 +134,7 @@ INSERT INTO #EnviromentMapping ([EnvId], [Text]) VALUES
 
 
 -- 清除並重建學校類型對照表
-DROP TABLE #SchoolTypeMapping
+IF OBJECT_ID('tempdb..#SchoolTypeMapping') IS NOT NULL DROP TABLE #SchoolTypeMapping
 GO
 
 -- 建立學校類型對照表，用於轉換學校類型名稱為ID
@@ -152,7 +152,7 @@ INSERT INTO #SchoolTypeMapping ([Type], [Text]) VALUES
 (4, 'extremely_biased')                  -- 4: 極偏遠學校
 
 -- 清除並重建認證等級對照表
-DROP TABLE #CertificationLevelMapping
+IF OBJECT_ID('tempdb..#CertificationLevelMapping') IS NOT NULL DROP TABLE #CertificationLevelMapping
 GO
 
 -- 建立認證等級對照表，用於轉換舊系統level為新系統CertificationTypeId
