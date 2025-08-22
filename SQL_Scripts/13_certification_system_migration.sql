@@ -34,6 +34,32 @@ DBCC CHECKIDENT ('CertificationStepRecords', RESEED, 0);
 PRINT '✓ 認證系統相關資料表已清空';
 
 -- =============================================
+-- STEP 0.5: 建立認證等級對照表
+-- =============================================
+PRINT '=== 建立認證等級對照表 ===';
+
+-- 清除並重建認證等級對照表
+IF OBJECT_ID('tempdb..#CertificationLevelMapping') IS NOT NULL DROP TABLE #CertificationLevelMapping;
+
+-- 建立認證等級對照表，用於轉換舊系統level為新系統CertificationTypeId
+CREATE TABLE #CertificationLevelMapping (
+    [OldLevel] INT,                          -- 舊系統認證等級
+    [NewCertificationTypeId] INT,           -- 新系統認證類型ID
+    [Description] NVARCHAR(50)              -- 說明
+);
+
+-- 插入認證等級對照資料
+INSERT INTO #CertificationLevelMapping ([OldLevel], [NewCertificationTypeId], [Description]) VALUES 
+(1, 6, N'銅牌'),                          -- 1: 銅牌 -> CertificationTypeId = 6
+(2, 5, N'銀牌'),                          -- 2: 銀牌 -> CertificationTypeId = 5
+(3, 1, N'綠旗'),                          -- 3: 綠旗 -> CertificationTypeId = 1
+(4, 2, N'綠旗R1'),                        -- 4: 綠旗R1 -> CertificationTypeId = 2
+(5, 3, N'綠旗R2'),                        -- 5: 綠旗R2 -> CertificationTypeId = 3
+(6, 4, N'綠旗R3');                        -- 6: 綠旗R3 -> CertificationTypeId = 4
+
+PRINT '✓ 認證等級對照表建立完成';
+
+-- =============================================
 -- STEP 1: 遷移 Questions 表資料
 -- =============================================
 PRINT '=== 開始遷移 Questions 表 ===';
@@ -137,7 +163,7 @@ INSERT INTO Certifications (
 SELECT 
     cc.sid AS CertificationId,
     s.Id AS SchoolId,
-    cc.level AS Level,
+    CLM.NewCertificationTypeId AS Level,
     CASE cc.review
         WHEN N'通過' THEN 1
         WHEN N'待審核' THEN 0
@@ -184,7 +210,9 @@ INNER JOIN Schools s ON s.SchoolCode = CASE
     WHEN cm.sid = 796 THEN N'061F01'
     ELSE cm.code 
 END
+LEFT JOIN #CertificationLevelMapping CLM ON CLM.OldLevel = cc.level
 WHERE cc.sid IS NOT NULL AND cm.member_role = 'school'
+    AND CLM.NewCertificationTypeId IS NOT NULL
 ORDER BY cc.sid;
 
 DECLARE @CertCount INT = @@ROWCOUNT;
