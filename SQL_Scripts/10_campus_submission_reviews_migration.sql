@@ -69,16 +69,16 @@ INSERT INTO CampusSubmissionReviews (
 SELECT 
     cs.CampusSubmissionId,
     -- 審核狀態對應：
-    -- 舊系統 '審核通過' -> 新系統 1 (Approved)
-    -- 舊系統 '審核失敗' -> 新系統 2 (Rejected) 
-    -- 舊系統 '審核中' -> 新系統 0 (Pending)
-    -- 舊系統 '尚未送審' -> 新系統 0 (Pending)
+    -- 舊系統 '尚未送審' -> 新系統 0 (未送審)
+    -- 舊系統 '審核中' -> 新系統 1 (審核中)
+    -- 舊系統 '審核通過' -> 新系統 2 (審核通過) 
+    -- 舊系統 '審核失敗' -> 新系統 3 (審核未通過)
     CASE 
-        WHEN cret.review LIKE N'%通過%' THEN 1  -- 審核通過
-        WHEN cret.review LIKE N'%失敗%' THEN 2  -- 審核失敗
-        WHEN cret.review LIKE N'%審核中%' THEN 0  -- 審核中
-        WHEN cret.review LIKE N'%尚未送審%' THEN 0  -- 尚未送審
-        ELSE 0  -- 預設為待審核
+        WHEN cret.review LIKE N'%通過%' THEN 2  -- 審核通過
+        WHEN cret.review LIKE N'%失敗%' THEN 3  -- 審核未通過
+        WHEN cret.review LIKE N'%審核中%' THEN 1  -- 審核中
+        WHEN cret.review LIKE N'%尚未送審%' THEN 0  -- 未送審
+        ELSE 0  -- 預設為未送審
     END as ReviewStatus,
     COALESCE(cret.release_opinion, N'') as ReviewComment,
     -- ReviewDate: 送審日期 (reviewdate) 或 更新日期 (updatedate)
@@ -142,7 +142,7 @@ INSERT INTO CampusSubmissionReviews (
 SELECT 
     cs.CampusSubmissionId,
     -- 根據 custom_news.is_show 判斷審核狀態
-    CASE WHEN cn.is_show = 1 THEN 1 ELSE 0 END as ReviewStatus, -- 1=通過, 0=待審核
+    CASE WHEN cn.is_show = 1 THEN 2 ELSE 0 END as ReviewStatus, -- 2=審核通過, 0=未送審
     N'系統遷移：根據原始顯示狀態自動設定' as ReviewComment,
     @MigrationStartTime as ReviewDate,
     CASE WHEN cn.is_show = 1 THEN @MigrationStartTime ELSE NULL END as ApprovedDate,
@@ -183,17 +183,19 @@ PRINT '========================================';
 SELECT 
     '校園投稿審核歷程統計' as [遷移項目],
     (SELECT COUNT(*) FROM CampusSubmissionReviews WHERE CreatedTime = @MigrationStartTime) as [總審核記錄],
-    (SELECT COUNT(*) FROM CampusSubmissionReviews WHERE ReviewStatus = 0 AND CreatedTime = @MigrationStartTime) as [待審核],
-    (SELECT COUNT(*) FROM CampusSubmissionReviews WHERE ReviewStatus = 1 AND CreatedTime = @MigrationStartTime) as [審核通過],
-    (SELECT COUNT(*) FROM CampusSubmissionReviews WHERE ReviewStatus = 2 AND CreatedTime = @MigrationStartTime) as [審核失敗];
+    (SELECT COUNT(*) FROM CampusSubmissionReviews WHERE ReviewStatus = 0 AND CreatedTime = @MigrationStartTime) as [未送審],
+    (SELECT COUNT(*) FROM CampusSubmissionReviews WHERE ReviewStatus = 1 AND CreatedTime = @MigrationStartTime) as [審核中],
+    (SELECT COUNT(*) FROM CampusSubmissionReviews WHERE ReviewStatus = 2 AND CreatedTime = @MigrationStartTime) as [審核通過],
+    (SELECT COUNT(*) FROM CampusSubmissionReviews WHERE ReviewStatus = 3 AND CreatedTime = @MigrationStartTime) as [審核未通過];
 
 -- 顯示審核狀態分佈詳情
 PRINT '審核狀態分佈詳情:';
 SELECT 
     CASE ReviewStatus
-        WHEN 0 THEN N'待審核 (Pending)'
-        WHEN 1 THEN N'審核通過 (Approved)'  
-        WHEN 2 THEN N'審核失敗 (Rejected)'
+        WHEN 0 THEN N'未送審 (Not Submitted)'
+        WHEN 1 THEN N'審核中 (Under Review)'
+        WHEN 2 THEN N'審核通過 (Approved)'  
+        WHEN 3 THEN N'審核未通過 (Rejected)'
         ELSE N'未知狀態'
     END as [審核狀態],
     COUNT(*) as [記錄數量],
@@ -212,9 +214,10 @@ SELECT TOP 5
     csr.CampusSubmissionReviewId as [審核ID],
     cs.CampusSubmissionId as [投稿ID],
     CASE csr.ReviewStatus
-        WHEN 0 THEN N'待審核'
-        WHEN 1 THEN N'審核通過'  
-        WHEN 2 THEN N'審核失敗'
+        WHEN 0 THEN N'未送審'
+        WHEN 1 THEN N'審核中'
+        WHEN 2 THEN N'審核通過'  
+        WHEN 3 THEN N'審核未通過'
         ELSE N'未知'
     END as [審核狀態],
     LEFT(COALESCE(csr.ReviewComment, ''), 30) + '...' as [審核意見],
@@ -233,9 +236,10 @@ PRINT '⚠️  重要提醒:';
 PRINT '1. ReviewerId 對應問題：目前所有審核者都設為 1（預設管理員）';
 PRINT '   需要根據實際審核者資訊建立對應關係';
 PRINT '2. 審核狀態對應：';
-PRINT '   - 0: 待審核 (包含 "審核中" 和 "尚未送審")';
-PRINT '   - 1: 審核通過';
-PRINT '   - 2: 審核失敗';
+PRINT '   - 0: 未送審';
+PRINT '   - 1: 審核中';
+PRINT '   - 2: 審核通過';
+PRINT '   - 3: 審核未通過';
 PRINT '3. 日期轉換：Unix timestamp 已轉換為 datetime2 格式';
 PRINT '4. 部分投稿可能沒有 custom_release_en_tw 記錄，已建立預設審核狀態';
 PRINT '========================================';
@@ -251,3 +255,6 @@ PRINT '- 預設狀態建立: ' + CAST(@DefaultReviewCount AS VARCHAR) + ' 筆';
 PRINT '- 總審核記錄: ' + CAST(@ReviewCount + @DefaultReviewCount AS VARCHAR) + ' 筆';
 PRINT '執行完成時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
 PRINT '========================================';
+
+-- ✅ RESOLVED: 審核狀態mapping已修正 0: 未送審 , 1: 審核中 , 2: 審核通過 , 3: 審核未通過
+-- ✅ RESOLVED: 審核紀錄維持一對一關係，表結構適當調整

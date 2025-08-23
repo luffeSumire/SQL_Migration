@@ -226,7 +226,7 @@ LEFT JOIN [EcoCampus_Maria3].[dbo].[custom_member_path] CMP ON
     CMP.[member_sid] = CM.[sid]
 WHERE 
 	CM.[member_role] = 'school' 
-	AND CM.sid not in  (732)
+	AND CM.sid not in  (732,1011,1012)
 
 -- 修正特定學校的學校代碼（為解決資料不一致的問題）
 UPDATE #SchoolData SET SchoolCode = '193665' WHERE OriginalSchoolId = 812 -- 修正市立大崗國小的學校代碼
