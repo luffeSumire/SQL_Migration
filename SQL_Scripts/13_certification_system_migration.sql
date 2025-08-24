@@ -10,6 +10,23 @@ SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 USE EcoCampus_PreProduction;
 
+-- 確保 IsRenewed 欄位支援舊系統 -1~1 值域
+-- 先刪除預設值約束，再修改欄位類型
+DECLARE @ConstraintName NVARCHAR(256);
+SELECT @ConstraintName = name 
+FROM sys.default_constraints 
+WHERE parent_object_id = OBJECT_ID('Questions') 
+  AND parent_column_id = (SELECT column_id FROM sys.columns WHERE object_id = OBJECT_ID('Questions') AND name = 'IsRenewed');
+
+IF @ConstraintName IS NOT NULL
+BEGIN
+    EXEC('ALTER TABLE Questions DROP CONSTRAINT [' + @ConstraintName + ']');
+    PRINT '✓ 已刪除 IsRenewed 預設值約束: ' + @ConstraintName;
+END
+
+ALTER TABLE Questions ALTER COLUMN IsRenewed INT;
+PRINT '✓ IsRenewed 欄位已修改為 INT 類型，支援 -1~1 值域';
+
 PRINT '========================================';
 PRINT '認證系統遷移腳本開始執行';
 PRINT '執行時間: ' + CONVERT(VARCHAR, SYSDATETIME(), 120);
@@ -78,7 +95,7 @@ SELECT
     COALESCE(cq.title, '') AS Title,
     NULL AS ParentQuestionId,
     cq.step AS StepNumber,
-    CASE WHEN cq.is_renew_temp = 1 THEN 1 ELSE 0 END AS IsRenewed,
+    cq.is_renew_temp AS IsRenewed,
     CASE 
         WHEN cq.createdate IS NOT NULL AND cq.createdate > 0 
         THEN DATEADD(second, cq.createdate, '1970-01-01 00:00:00')
@@ -117,7 +134,7 @@ SELECT
     COALESCE(cq.title, '') AS Title,
     cq.parent_sid AS ParentQuestionId,
     cq.step AS StepNumber,
-    CASE WHEN cq.is_renew_temp = 1 THEN 1 ELSE 0 END AS IsRenewed,
+    cq.is_renew_temp AS IsRenewed,
     CASE 
         WHEN cq.createdate IS NOT NULL AND cq.createdate > 0 
         THEN DATEADD(second, cq.createdate, '1970-01-01 00:00:00')

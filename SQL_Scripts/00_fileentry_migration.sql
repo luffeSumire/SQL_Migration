@@ -9,6 +9,23 @@
 USE EcoCampus_PreProduction;
 GO
 
+-- ========================================
+-- 確保 FileHash 欄位存在
+-- ========================================
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+    WHERE TABLE_NAME = 'FileEntry' AND COLUMN_NAME = 'FileHash'
+)
+BEGIN
+    ALTER TABLE FileEntry ADD FileHash NCHAR(32) NULL;
+    PRINT '✓ FileHash 欄位已新增至 FileEntry 表';
+END
+ELSE
+BEGIN
+    PRINT '✓ FileHash 欄位已存在於 FileEntry 表';
+END
+GO
+
 DECLARE @StartTime DATETIME2 = SYSDATETIME();
 PRINT '========================================';
 PRINT 'FileEntry 匯入腳本開始執行';
@@ -38,7 +55,7 @@ END CATCH;
 DECLARE @Inserted INT = 0;
 
 INSERT INTO EcoCampus_PreProduction.dbo.FileEntry
-    (Id, Type, Path, OriginalFileName, OriginalExtension, FileName, Extension)
+    (Id, Type, Path, OriginalFileName, OriginalExtension, FileName, Extension, FileHash)
 SELECT
     NEWID() AS Id,
     N'File' AS Type,
@@ -50,7 +67,8 @@ SELECT
     s.name AS OriginalFileName,
     s.file_ext AS OriginalExtension,
     s.name AS FileName,
-    s.file_ext AS Extension
+    s.file_ext AS Extension,
+    s.file_hash AS FileHash
 FROM EcoCampus_Maria3.dbo.sys_files_store s
 WHERE NOT EXISTS (
     SELECT 1
