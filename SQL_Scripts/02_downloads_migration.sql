@@ -229,6 +229,83 @@ DECLARE @AttachmentsOdtCount INT = @@ROWCOUNT;
 PRINT '✓ ODT 檔案附件遷移完成: ' + CAST(@AttachmentsOdtCount AS VARCHAR) + ' 筆記錄';
 
 -- ========================================
+-- 5.1 插入 DownloadAttachments (Link / Video 類型)
+PRINT '步驟 5.1: 遷移 Link (video) 類型附件...';
+
+-- 假設來源 link 類型資料存在於 custom_article_file_link 並以 type='link' 區分，URL 欄位為 link_url
+-- 1. 僅針對 zh-TW 內容建立 (後續 5.2 再複製到英文)
+-- 2. FileEntryId 對於外部連結 / 影片連結為 NULL (假設資料表允許 NULL)，以 LinkUrl 欄位保存實際 URL
+-- 3. SortOrder: 為避免與 PDF/ODT 衝突，於原 sequence 基礎上加 50 (可按需求調整)
+-- 4. 若需更嚴謹排序，可改為: 取得該 DownloadContent 現有最大 SortOrder 再加 1
+WITH SourceLink AS (
+    SELECT 
+        ROW_NUMBER() OVER (ORDER BY ca.createdate) AS rn,
+        ca.sid,
+        ca.title,
+        afl.link_url,
+        COALESCE(afl.sequence, 0) AS sequence
+    FROM EcoCampus_Maria3.dbo.custom_article ca
+    INNER JOIN EcoCampus_Maria3.dbo.custom_article_file_link afl ON ca.sid = afl.table_sid
+    WHERE ca.type = 'file_dl'
+      AND ca.lan = 'zh_tw'
+      AND afl.type = 'link'
+      AND afl.link_url IS NOT NULL
+), TargetZh AS (
+    SELECT ROW_NUMBER() OVER (ORDER BY dc.DownloadContentId) AS rn, dc.DownloadContentId
+    FROM DownloadContents dc
+    WHERE dc.CreatedTime > DATEADD(MINUTE, -10, SYSDATETIME()) AND dc.LocaleCode = 'zh-TW'
+)
+INSERT INTO DownloadAttachments (DownloadContentId, FileEntryId, ContentTypeCode, Title, LinkUrl, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId, SortOrder)
+SELECT 
+    t.DownloadContentId,
+    NULL AS FileEntryId,
+    'video' AS ContentTypeCode,
+    LEFT(s.title, 100) AS Title,
+    s.link_url AS LinkUrl,
+    SYSDATETIME() AS CreatedTime,
+    1 AS CreatedUserId,
+    SYSDATETIME() AS UpdatedTime,
+    1 AS UpdatedUserId,
+    s.sequence + 50 AS SortOrder
+FROM SourceLink s
+INNER JOIN TargetZh t ON s.rn = t.rn;
+
+DECLARE @AttachmentsLinkCount INT = @@ROWCOUNT;
+PRINT '✓ Link / Video 類型附件遷移完成: ' + CAST(@AttachmentsLinkCount AS VARCHAR) + ' 筆記錄';
+
+-- ========================================
+-- 5.2 複製附件到英文語系 (讓英文語系內容也擁有同一組附件)
+-- 說明:
+--  1. 英文語系目前的內容是由中文複製而來，但附件僅綁在 zh-TW 的 DownloadContentId 下
+--  2. 新系統需求: 每個語系的 DownloadContent 需要各自擁有附件 (UI / API 讀取語系內容時可直接取到附件)
+--  3. 作法: 以 DownloadId 對應 zh-TW 與 en 的 DownloadContent，複製附件記錄
+--  4. 避免重複: 以 LEFT JOIN 判斷英文語系是否已存在相同 FileEntry 的附件
+--  5. Title 直接複製 (若未來有英文翻譯，可再行更新)
+PRINT '步驟 5.2: 複製附件到英文語系...';
+
+-- 新增 LinkUrl 欄位一併複製 (PDF/ODT 為 NULL, link/video 會有值)
+INSERT INTO DownloadAttachments (DownloadContentId, FileEntryId, ContentTypeCode, Title, LinkUrl, CreatedTime, CreatedUserId, UpdatedTime, UpdatedUserId, SortOrder)
+SELECT 
+    dcen.DownloadContentId,
+    da.FileEntryId,
+    da.ContentTypeCode,
+    da.Title,
+    da.LinkUrl,
+    SYSDATETIME() as CreatedTime,
+    1 as CreatedUserId,
+    SYSDATETIME() as UpdatedTime,
+    1 as UpdatedUserId,
+    da.SortOrder
+FROM DownloadAttachments da
+INNER JOIN DownloadContents dczh ON da.DownloadContentId = dczh.DownloadContentId AND dczh.LocaleCode = 'zh-TW'
+INNER JOIN DownloadContents dcen ON dczh.DownloadId = dcen.DownloadId AND dcen.LocaleCode = 'en'
+LEFT JOIN DownloadAttachments da_en ON da_en.DownloadContentId = dcen.DownloadContentId AND da_en.FileEntryId = da.FileEntryId
+WHERE da_en.DownloadAttachmentId IS NULL;  -- 避免重複執行時重複插入
+
+DECLARE @AttachmentsEnCloneCount INT = @@ROWCOUNT;
+PRINT '✓ 英文語系附件複製完成: ' + CAST(@AttachmentsEnCloneCount AS VARCHAR) + ' 筆記錄';
+
+-- ========================================
 -- 6. 遷移結果統計和驗證
 -- ========================================
 PRINT '========================================';
