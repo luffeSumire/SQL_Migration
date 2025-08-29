@@ -67,12 +67,15 @@ SELECT
     DATEADD(SECOND, ca.createdate, '1970-01-01') as PublishDate,  -- Unix timestamp 轉換
     -- Tag 對應規則 (根據來源的 tag_sid 對應到新系統)
     CASE 
-        WHEN ca.tag_sid = 4 THEN 'checklist'         -- 檢核表 → 檢核清單
-        WHEN ca.tag_sid = 20 THEN 'briefing'         -- 說明會
-        WHEN ca.tag_sid = 22 THEN 'award_ceremony'   -- 頒獎典禮
-        WHEN ca.tag_sid = 30 THEN 'workshop'         -- 工作坊/研習
-        WHEN ca.tag_sid = 31 THEN 'briefing'         -- 說明會/簡報
-        ELSE 'social_resources'                      -- 預設為社會資源
+        WHEN ca.tag_sid = 4 THEN 'checklist'
+        WHEN ca.tag_sid = 20 THEN 'e_handbook'
+        WHEN ca.tag_sid = 22 THEN 'award_ceremony'
+        WHEN ca.tag_sid = 30 THEN 'workshop'
+        WHEN ca.tag_sid = 31 THEN 'briefing'
+        WHEN ca.tag_sid = 43 THEN 'featured_videos'
+        WHEN ca.tag_sid = 54 THEN 'social_resources'
+        ELSE 'other'
+
     END as TagCode,
     '#' as ExternalLink,                -- 預設外部連結
     SYSDATETIME() as CreatedTime,
