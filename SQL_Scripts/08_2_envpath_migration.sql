@@ -18,19 +18,19 @@
   - 清除原有 [SchoolEnvironmentalPathStatuses] 內全部資料後重建 (若需保留原資料，請在執行前備份或移除刪除語句)
 
 注意:
-  - 此腳本假設目標資料庫為 [EcoCampus_PreProduction3]，若環境不同請搜尋/取代資料庫名稱。
+  - 此腳本假設目標資料庫為 [EcoCampus_PreProduction]，若環境不同請搜尋/取代資料庫名稱。
   - 如需保留現有資料請註解刪除語句。
 */
 SET NOCOUNT ON;
 
 PRINT 'Step 1: 檢查並新增 SchoolEnvironmentalPathStatuses.Level 欄位...';
 IF NOT EXISTS (
-    SELECT 1 FROM [EcoCampus_PreProduction3].sys.columns 
+    SELECT 1 FROM [EcoCampus_PreProduction].sys.columns 
     WHERE name = 'Level' 
-      AND object_id = OBJECT_ID('[EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses]')
+      AND object_id = OBJECT_ID('[EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]')
 )
 BEGIN
-    ALTER TABLE [EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses]
+    ALTER TABLE [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]
         ADD [Level] TINYINT NULL; -- 認證等級 (對應 Certifications.Level)
     PRINT ' - 已新增 Level 欄位';
 END
@@ -43,26 +43,26 @@ GO
 PRINT 'Step 1-1: 調整索引 (清除舊索引, 稍後重建唯一索引)...';
 -- 移除舊唯一索引 (若存在)
 IF EXISTS (
-    SELECT 1 FROM [EcoCampus_PreProduction3].sys.indexes 
+    SELECT 1 FROM [EcoCampus_PreProduction].sys.indexes 
     WHERE name = 'UQ_SchoolEnvironmentalPathStatus_School_Path_Level' 
-      AND object_id = OBJECT_ID('[EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses]'))
+      AND object_id = OBJECT_ID('[EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]'))
 BEGIN
-    DROP INDEX [UQ_SchoolEnvironmentalPathStatus_School_Path_Level] ON [EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses];
+    DROP INDEX [UQ_SchoolEnvironmentalPathStatus_School_Path_Level] ON [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses];
     PRINT ' - 已刪除唯一索引 UQ_SchoolEnvironmentalPathStatus_School_Path_Level';
 END
 IF EXISTS (
-    SELECT 1 FROM [EcoCampus_PreProduction3].sys.indexes 
+    SELECT 1 FROM [EcoCampus_PreProduction].sys.indexes 
     WHERE name = 'UQ_SchoolEnvironmentalPathStatus_School_Path' 
-      AND object_id = OBJECT_ID('[EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses]'))
+      AND object_id = OBJECT_ID('[EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]'))
 BEGIN
-    DROP INDEX [UQ_SchoolEnvironmentalPathStatus_School_Path] ON [EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses];
+    DROP INDEX [UQ_SchoolEnvironmentalPathStatus_School_Path] ON [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses];
     PRINT ' - 已刪除唯一索引 UQ_SchoolEnvironmentalPathStatus_School_Path';
 END
 -- 先不建立索引，待資料插入後建立唯一索引
 GO
 
 PRINT 'Step 2: 重新遷移 環境教育路徑歷程資料 (清除舊資料)...';
-DELETE FROM [EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses];
+DELETE FROM [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses];
 PRINT ' - 已刪除原有資料筆數: ' + CAST(@@ROWCOUNT AS VARCHAR(20));
 GO
 
@@ -113,7 +113,16 @@ WITH RawData AS (
     SELECT 
         S.Id AS SchoolId,
         M.EnvId AS EnvironmentalPathId,
-        CAST(TRY_CONVERT(TINYINT, CC.level) AS TINYINT) AS [Level],
+        /* 等級映射 舊->新: 1->6(銅牌),2->5(銀牌),3->1(綠旗),4->2(綠旗R1),5->3(綠旗R2),6->4(綠旗R3) */
+        CASE TRY_CONVERT(TINYINT, CC.level)
+            WHEN 1 THEN 6
+            WHEN 2 THEN 5
+            WHEN 3 THEN 1
+            WHEN 4 THEN 2
+            WHEN 5 THEN 3
+            WHEN 6 THEN 4
+            ELSE NULL
+        END AS [Level],
         CML.sid AS MemberLevelSid,
         CASE 
             WHEN TRY_CONVERT(INT, 
@@ -155,7 +164,7 @@ WITH RawData AS (
     INNER JOIN [EcoCampus_Maria3].[dbo].[custom_member_path] CMP
         ON CMP.level_sid = CML.sid
     INNER JOIN #EnvPathMapping M ON 1=1
-    INNER JOIN [EcoCampus_PreProduction3].[dbo].[Schools] S 
+    INNER JOIN [EcoCampus_PreProduction].[dbo].[Schools] S 
         ON S.SchoolCode = (
             CASE 
                 WHEN CM.sid = 812 THEN '193665'
@@ -165,13 +174,13 @@ WITH RawData AS (
             END
         )
     WHERE CM.member_role = 'school'
-      AND TRY_CONVERT(TINYINT, CC.level) IS NOT NULL
+    AND TRY_CONVERT(TINYINT, CC.level) BETWEEN 1 AND 6
 ), Ranked AS (
     SELECT *,
            ROW_NUMBER() OVER (PARTITION BY SchoolId, [Level], EnvironmentalPathId ORDER BY MemberLevelSid DESC, CreatedTime DESC) AS rn
     FROM RawData
 )
-INSERT INTO [EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses]
+INSERT INTO [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]
 (
     SchoolId,
     EnvironmentalPathId,
@@ -204,12 +213,12 @@ GO
 
 PRINT 'Step 3: 建立唯一索引 (SchoolId,Level,EnvironmentalPathId)...';
 IF NOT EXISTS (
-        SELECT 1 FROM [EcoCampus_PreProduction3].sys.indexes 
+        SELECT 1 FROM [EcoCampus_PreProduction].sys.indexes 
         WHERE name = 'UQ_SchoolEnvironmentalPathStatus_School_Level_Path' 
-            AND object_id = OBJECT_ID('[EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses]'))
+            AND object_id = OBJECT_ID('[EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses]'))
 BEGIN
         CREATE UNIQUE INDEX UQ_SchoolEnvironmentalPathStatus_School_Level_Path
-            ON [EcoCampus_PreProduction3].[dbo].[SchoolEnvironmentalPathStatuses] (SchoolId, [Level], EnvironmentalPathId);
+            ON [EcoCampus_PreProduction].[dbo].[SchoolEnvironmentalPathStatuses] (SchoolId, [Level], EnvironmentalPathId);
         PRINT ' - 已建立唯一索引 UQ_SchoolEnvironmentalPathStatus_School_Level_Path';
 END
 ELSE
