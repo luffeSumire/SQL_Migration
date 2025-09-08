@@ -26,6 +26,38 @@ PRINT '========================================';
 PRINT '⚙️ 02_2 Downloads 修正遷移腳本開始';
 PRINT '開始時間: ' + CONVERT(varchar(19), SYSDATETIME(), 120);
 PRINT '========================================';
+-- ========================================
+-- 0. 清空 Downloads 相關資料表
+-- ========================================
+PRINT '步驟 0: 清空 Downloads 相關資料表...';
+
+-- 停用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'DownloadAttachments')
+    ALTER TABLE DownloadAttachments NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'DownloadContents')
+    ALTER TABLE DownloadContents NOCHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Downloads')
+    ALTER TABLE Downloads NOCHECK CONSTRAINT ALL;
+
+-- 清空資料 (從子表到主表的順序)
+DELETE FROM DownloadAttachments;
+DELETE FROM DownloadContents;
+DELETE FROM Downloads;
+
+-- 重新啟用外鍵約束檢查
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'DownloadAttachments')
+    ALTER TABLE DownloadAttachments WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'DownloadContents')
+    ALTER TABLE DownloadContents WITH CHECK CHECK CONSTRAINT ALL;
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Downloads')
+    ALTER TABLE Downloads WITH CHECK CHECK CONSTRAINT ALL;
+
+-- 重置自增欄位
+IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('Downloads'))
+    DBCC CHECKIDENT ('Downloads', RESEED, 0);
+
+PRINT '✓ Downloads 相關資料表已清空';
+GO
 
 /* ----------------------------------------------------
    參數 / 可調整區
